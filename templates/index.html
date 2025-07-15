@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品客户价值分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 页面标题 -->
+        <header class="header">
+            <h1><i class="fas fa-chart-line"></i> 产品客户价值分析系统</h1>
+            <p class="subtitle">基于四象限分析的智能决策支持系统</p>
+        </header>
+
+        <!-- 文件上传区域 -->
+        <section class="upload-section" id="uploadSection">
+            <div class="upload-card">
+                <h2><i class="fas fa-upload"></i> 数据上传</h2>
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <p>点击选择或拖拽Excel文件到此处</p>
+                        <p class="upload-hint">支持 .xlsx 和 .xls 格式，文件大小不超过50MB</p>
+                        <input type="file" id="fileInput" accept=".xlsx,.xls" style="display: none;">
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            选择文件
+                        </button>
+                    </div>
+                </div>
+                <div class="upload-progress" id="uploadProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <p id="progressText">上传中...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sheet选择区域 -->
+        <section class="sheet-section" id="sheetSection" style="display: none;">
+            <div class="sheet-card">
+                <h2><i class="fas fa-table"></i> 选择工作表</h2>
+                <div class="sheet-list" id="sheetList">
+                    <!-- 动态生成sheet选项 -->
+                </div>
+                <button class="btn btn-primary" id="nextToFieldDetection" disabled>下一步：字段检测</button>
+            </div>
+        </section>
+
+        <!-- 字段检测区域 -->
+        <section class="field-section" id="fieldSection" style="display: none;">
+            <div class="field-card">
+                <h2><i class="fas fa-search"></i> 字段检测结果</h2>
+                <div class="field-detection-result" id="fieldDetectionResult">
+                    <!-- 动态显示字段检测结果 -->
+                </div>
+                <div class="analysis-type-selection">
+                    <h3>选择分析维度</h3>
+                    <div class="analysis-options">
+                        <label class="analysis-option">
+                            <input type="radio" name="analysisType" value="product">
+                            <span class="option-content">
+                                <i class="fas fa-box"></i>
+                                <strong>分单品分析</strong>
+                                <small>分析产品销量、毛利表现</small>
+                            </span>
+                        </label>
+                        <label class="analysis-option">
+                            <input type="radio" name="analysisType" value="customer">
+                            <span class="option-content">
+                                <i class="fas fa-users"></i>
+                                <strong>分客户分析</strong>
+                                <small>分析客户价值、采购贡献</small>
+                            </span>
+                        </label>
+                        <label class="analysis-option">
+                            <input type="radio" name="analysisType" value="region">
+                            <span class="option-content">
+                                <i class="fas fa-map-marker-alt"></i>
+                                <strong>分地区分析</strong>
+                                <small>分析地区市场表现</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="nextToUnitConfirmation" disabled>下一步：单位确认</button>
+            </div>
+        </section>
+
+        <!-- 单位确认区域 -->
+        <section class="unit-section" id="unitSection" style="display: none;">
+            <div class="unit-card">
+                <h2><i class="fas fa-balance-scale"></i> 单位确认</h2>
+                <p class="unit-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    请仔细确认您上传数据中各字段的原始单位，系统将根据您的选择进行相应的单位转换。
+                </p>
+                <div class="unit-options" id="unitOptions">
+                    <!-- 动态生成单位选项 -->
+                </div>
+                <button class="btn btn-success" id="startAnalysis" disabled>开始分析</button>
+            </div>
+        </section>
+
+        <!-- 分析结果区域 -->
+        <section class="analysis-section" id="analysisSection" style="display: none;">
+            <div class="analysis-header">
+                <h2><i class="fas fa-chart-pie"></i> 分析结果</h2>
+                <div class="analysis-actions">
+                    <button class="btn btn-secondary" id="exportReport">
+                        <i class="fas fa-download"></i> 导出报告
+                    </button>
+                    <button class="btn btn-outline" id="newAnalysis">
+                        <i class="fas fa-plus"></i> 新建分析
+                    </button>
+                </div>
+            </div>
+
+            <!-- 四象限分析 -->
+            <div class="quadrant-analysis">
+                <div class="quadrant-chart-container">
+                    <div class="chart-wrapper">
+                        <div id="quadrantChart" class="chart"></div>
+                    </div>
+                    <div class="strategy-cards" id="strategyCards">
+                        <!-- 动态生成策略洞察卡片 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 补充分析图表 -->
+            <div class="additional-charts">
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h3>帕累托分析</h3>
+                        <div id="paretoChart" class="chart"></div>
+                    </div>
+                    <div class="chart-container">
+                        <h3>分布区间分析</h3>
+                        <div id="distributionChart" class="chart"></div>
+                    </div>
+                </div>
+                <div class="chart-row">
+                    <div class="chart-container">
+                        <h3>盈亏分析</h3>
+                        <div id="profitLossChart" class="chart"></div>
+                    </div>
+                    <div class="chart-container">
+                        <h3>贡献度分析</h3>
+                        <div id="contributionChart" class="chart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 明细数据表格 -->
+            <div class="data-table-container">
+                <h3>明细数据</h3>
+                <div class="table-controls">
+                    <input type="text" id="searchInput" placeholder="搜索..." class="search-input">
+                    <select id="filterSelect" class="filter-select">
+                        <option value="">全部</option>
+                    </select>
+                </div>
+                <div class="table-wrapper">
+                    <table id="dataTable" class="data-table">
+                        <thead id="tableHeader">
+                            <!-- 动态生成表头 -->
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- 动态生成表格数据 -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-pagination" id="tablePagination">
+                    <!-- 分页控件 -->
+                </div>
+            </div>
+        </section>
+
+        <!-- 加载提示 -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p id="loadingText">处理中...</p>
+            </div>
+        </div>
+
+        <!-- 消息提示 -->
+        <div class="message-container" id="messageContainer"></div>
+    </div>
+
+    <!-- 引入ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <!-- 引入自定义JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
