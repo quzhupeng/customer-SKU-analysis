@@ -514,21 +514,54 @@ function displayAnalysisResults() {
 function displayQuadrantAnalysis() {
     const quadrantData = analysisResult.quadrant_analysis;
     const chartContainer = document.getElementById('quadrantChart');
-    
-    const chart = echarts.init(chartContainer);
-    chartInstances['quadrantChart'] = chart;
-    
+
+    console.log('displayQuadrantAnalysis 调试信息:');
+    console.log('- 四象限数据点数量:', quadrantData.scatter_data.length);
+    console.log('- 当前筛选状态:', isQuadrantFiltered);
+    console.log('- 当前筛选类型:', currentFilterType);
+
+    // 获取或创建图表实例
+    let chart = chartInstances['quadrantChart'];
+    if (!chart || chart.isDisposed()) {
+        chart = echarts.init(chartContainer);
+        chartInstances['quadrantChart'] = chart;
+    } else {
+        // 清除现有配置，确保完全重新渲染
+        chart.clear();
+    }
+
     // 准备散点数据
     const scatterData = quadrantData.scatter_data.map(item => {
         const xField = getXFieldName();
         const yField = getYFieldName();
         return [item[xField], item[yField], item];
     });
-    
+
+    console.log('- 处理后的散点数据数量:', scatterData.length);
+    console.log('- X轴字段:', getXFieldName());
+    console.log('- Y轴字段:', getYFieldName());
+
+    // 根据筛选状态设置标题
+    let chartTitle = '四象限分析';
+    let titleColor = '#333';
+
+    if (isQuadrantFiltered) {
+        if (currentFilterType === 'loss') {
+            chartTitle = '四象限分析 - 亏损项目';
+            titleColor = '#ff6b6b';
+        } else if (currentFilterType === 'profitable') {
+            chartTitle = '四象限分析 - 盈利项目';
+            titleColor = '#4CAF50';
+        }
+    }
+
     const option = {
         title: {
-            text: '四象限分析',
-            left: 'center'
+            text: chartTitle,
+            left: 'center',
+            textStyle: {
+                color: titleColor
+            }
         },
         tooltip: {
             trigger: 'item',
@@ -613,7 +646,8 @@ function displayQuadrantAnalysis() {
         }]
     };
     
-    chart.setOption(option);
+    // 使用 notMerge: true 强制完全重新渲染
+    chart.setOption(option, true);
     
     // 点击事件
     chart.on('click', function(params) {
@@ -644,12 +678,89 @@ function getYFieldName() {
 }
 
 function getGroupFieldName() {
+    // 如果没有分析结果，返回null
+    if (!analysisResult || !analysisResult.field_detection) {
+        return null;
+    }
+    
+    // 获取原始检测的字段名
     const fieldMap = {
         'product': analysisResult.field_detection.detected_fields.product,
         'customer': analysisResult.field_detection.detected_fields.customer,
         'region': analysisResult.field_detection.detected_fields.region
     };
-    return fieldMap[currentAnalysisType];
+    
+    const originalFieldName = fieldMap[currentAnalysisType];
+    
+    // 如果没有找到原始字段名，返回null
+    if (!originalFieldName) {
+        return null;
+    }
+    
+    // 检查数据是否已经被聚合，如果是，可能需要调整字段名
+    // 首先尝试使用原始字段名
+    if (analysisResult.aggregated_data && analysisResult.aggregated_data.length > 0) {
+        const sampleData = analysisResult.aggregated_data[0];
+        
+        // 如果原始字段名存在于聚合数据中，直接返回
+        if (sampleData.hasOwnProperty(originalFieldName)) {
+            return originalFieldName;
+        }
+        
+        // 否则，尝试查找可能的替代字段名
+        // 聚合后的数据可能会使用不同的字段名，比如索引名或者带有前缀/后缀的名称
+        const possibleFields = Object.keys(sampleData);
+        
+        // 尝试精确匹配（忽略大小写）
+        const exactMatch = possibleFields.find(field => 
+            field.toLowerCase() === originalFieldName.toLowerCase()
+        );
+        if (exactMatch) {
+            return exactMatch;
+        }
+        
+        // 尝试部分匹配
+        // 根据分析类型查找包含关键词的字段
+        const keywords = {
+            'product': ['产品', 'product', 'sku', '物料', '商品'],
+            'customer': ['客户', 'customer', 'client', '买家'],
+            'region': ['地区', 'region', '区域', '省份', 'area']
+        };
+        
+        const typeKeywords = keywords[currentAnalysisType] || [];
+        for (const keyword of typeKeywords) {
+            const matchedField = possibleFields.find(field => 
+                field.toLowerCase().includes(keyword.toLowerCase()) &&
+                !field.includes('数量') && 
+                !field.includes('金额') && 
+                !field.includes('毛利') &&
+                !field.includes('成本') &&
+                !field.includes('占比') &&
+                !field.includes('率') &&
+                !field.includes('统计')
+            );
+            if (matchedField) {
+                return matchedField;
+            }
+        }
+        
+        // 如果还是找不到，检查是否有索引字段（可能被设置为索引）
+        if (possibleFields.includes('index')) {
+            return 'index';
+        }
+        
+        // 最后尝试找第一个看起来像名称的字段
+        const nameField = possibleFields.find(field => 
+            (field.includes('名称') || field.includes('name')) &&
+            !field.includes('象限')
+        );
+        if (nameField) {
+            return nameField;
+        }
+    }
+    
+    // 默认返回原始字段名
+    return originalFieldName;
 }
 
 function getGroupFieldLabel() {
@@ -1192,7 +1303,17 @@ function displayProfitLossChart() {
 
     const option = {
         tooltip: {
-            trigger: 'item'
+            trigger: 'item',
+            formatter: function(params) {
+                if (params.name === '亏损项目') {
+                    return `${params.name}: ${params.value} (${params.percent}%)<br/>
+                            <span style="color: #666; font-size: 12px;">💡 点击查看亏损项目详情</span>`;
+                } else if (params.name === '盈利项目') {
+                    return `${params.name}: ${params.value} (${params.percent}%)<br/>
+                            <span style="color: #666; font-size: 12px;">💡 点击查看盈利项目详情</span>`;
+                }
+                return `${params.name}: ${params.value} (${params.percent}%)`;
+            }
         },
         series: [{
             type: 'pie',
@@ -1211,11 +1332,472 @@ function displayProfitLossChart() {
             ],
             label: {
                 formatter: '{b}\n{c} ({d}%)'
+            },
+            emphasis: {
+                itemStyle: {
+                    shadowBlur: 10,
+                    shadowOffsetX: 0,
+                    shadowColor: 'rgba(0, 0, 0, 0.5)'
+                }
             }
         }]
     };
 
     chart.setOption(option);
+
+    // 添加点击事件监听器
+    chart.on('click', function(params) {
+        if (params.name === '亏损项目') {
+            // 触发亏损项目分析
+            filterQuadrantByLossItems();
+        } else if (params.name === '盈利项目') {
+            // 触发盈利项目分析
+            filterQuadrantByProfitableItems();
+        }
+    });
+}
+
+// 全局变量存储原始四象限数据
+let originalQuadrantData = null;
+let isQuadrantFiltered = false;
+let currentFilterType = null; // 'loss' 或 'profitable'
+
+// 根据亏损项目筛选四象限图
+function filterQuadrantByLossItems() {
+    if (!analysisResult || !analysisResult.additional_analysis.profit_loss_analysis) {
+        showMessage('无法获取盈亏分析数据', 'error');
+        return;
+    }
+
+    // 保存原始数据（如果还没有保存）
+    if (!originalQuadrantData) {
+        originalQuadrantData = JSON.parse(JSON.stringify(analysisResult.quadrant_analysis));
+    }
+
+    // 获取亏损项目数据
+    const profitLossData = analysisResult.additional_analysis.profit_loss_analysis;
+    const lossItems = profitLossData.loss_making_items;
+
+    // 调试信息（亏损项目）
+    console.log('亏损项目筛选调试信息:');
+    console.log('- 亏损项目数量:', lossItems ? lossItems.length : 0);
+
+    if (!lossItems || lossItems.length === 0) {
+        showMessage('没有找到亏损项目', 'info');
+        return;
+    }
+
+    // 获取分组字段名
+    const groupField = getGroupFieldName();
+    console.log('- 分组字段名:', groupField);
+
+    // 创建亏损项目名称集合，用于快速查找
+    const lossItemNames = new Set(lossItems.map(item => item[groupField]));
+    console.log('- 亏损项目名称集合大小:', lossItemNames.size);
+
+    // 筛选四象限数据，只保留亏损项目
+    const filteredScatterData = originalQuadrantData.scatter_data.filter(item =>
+        lossItemNames.has(item[groupField])
+    );
+
+    console.log('- 筛选后散点数据数量:', filteredScatterData.length);
+
+    // 创建筛选后的四象限数据对象
+    const filteredQuadrantData = {
+        ...originalQuadrantData,
+        scatter_data: filteredScatterData
+    };
+
+    // 更新全局分析结果中的四象限数据
+    analysisResult.quadrant_analysis = filteredQuadrantData;
+
+    // 标记为已筛选状态
+    isQuadrantFiltered = true;
+    currentFilterType = 'loss';
+
+    // 重新渲染四象限图
+    displayQuadrantAnalysis();
+
+    // 显示筛选提示和重置按钮
+    showFilterNotification();
+
+    // 显示成功消息
+    showMessage(`已筛选显示 ${filteredScatterData.length} 个亏损项目`, 'success');
+}
+
+// 根据盈利项目筛选四象限图
+function filterQuadrantByProfitableItems() {
+    console.log('=== 开始盈利项目筛选 ===');
+
+    if (!analysisResult || !analysisResult.additional_analysis.profit_loss_analysis) {
+        console.log('错误：无法获取盈亏分析数据');
+        showMessage('无法获取盈亏分析数据', 'error');
+        return;
+    }
+
+    // 保存原始数据（如果还没有保存）
+    if (!originalQuadrantData) {
+        originalQuadrantData = JSON.parse(JSON.stringify(analysisResult.quadrant_analysis));
+        console.log('- 保存原始四象限数据，数据点数量:', originalQuadrantData.scatter_data.length);
+    } else {
+        console.log('- 使用已保存的原始数据，数据点数量:', originalQuadrantData.scatter_data.length);
+    }
+
+    // 获取盈利项目数据
+    const profitLossData = analysisResult.additional_analysis.profit_loss_analysis;
+    const profitableItems = profitLossData.profitable_items;
+
+    // 调试信息
+    console.log('盈利项目筛选调试信息:');
+    console.log('- 盈利项目数量:', profitableItems ? profitableItems.length : 0);
+    console.log('- 原始散点数据数量:', originalQuadrantData.scatter_data.length);
+
+    if (!profitableItems || profitableItems.length === 0) {
+        console.log('没有找到盈利项目');
+        showMessage('没有找到盈利项目', 'info');
+        return;
+    }
+
+    // 获取分组字段名
+    const groupField = getGroupFieldName();
+    console.log('- 分组字段名:', groupField);
+
+    if (!groupField) {
+        console.log('错误：分组字段名为空');
+        showMessage('无法获取分组字段名', 'error');
+        return;
+    }
+
+    // 增强调试：详细检查字段结构
+    console.log('=== 字段结构详细分析 ===');
+    
+    // 检查盈利项目的所有字段
+    if (profitableItems.length > 0) {
+        console.log('盈利项目字段结构:');
+        const profitableFields = Object.keys(profitableItems[0]);
+        console.log('- 所有字段名:', profitableFields);
+        console.log('- 字段数量:', profitableFields.length);
+        console.log('- 前3个盈利项目示例:');
+        profitableItems.slice(0, 3).forEach((item, index) => {
+            console.log(`  项目${index + 1}:`, item);
+        });
+    }
+
+    // 检查散点数据的所有字段
+    if (originalQuadrantData.scatter_data.length > 0) {
+        console.log('\n散点数据字段结构:');
+        const scatterFields = Object.keys(originalQuadrantData.scatter_data[0]);
+        console.log('- 所有字段名:', scatterFields);
+        console.log('- 字段数量:', scatterFields.length);
+        console.log('- 前3个散点数据示例:');
+        originalQuadrantData.scatter_data.slice(0, 3).forEach((item, index) => {
+            console.log(`  数据${index + 1}:`, item);
+        });
+    }
+
+    // 创建灵活的字段映射函数
+    function findMatchingField(data, targetFieldName, possibleFieldPatterns) {
+        if (!data || typeof data !== 'object') return null;
+        
+        // 1. 首先尝试精确匹配
+        if (data[targetFieldName] !== undefined) {
+            return targetFieldName;
+        }
+        
+        // 2. 尝试忽略大小写的匹配
+        const fields = Object.keys(data);
+        const caseInsensitiveMatch = fields.find(f => 
+            f.toLowerCase() === targetFieldName.toLowerCase()
+        );
+        if (caseInsensitiveMatch) {
+            return caseInsensitiveMatch;
+        }
+        
+        // 3. 尝试使用模式匹配
+        if (possibleFieldPatterns && possibleFieldPatterns.length > 0) {
+            for (const pattern of possibleFieldPatterns) {
+                const patternMatch = fields.find(f => 
+                    f.toLowerCase().includes(pattern.toLowerCase()) &&
+                    !f.includes('数量') && 
+                    !f.includes('金额') && 
+                    !f.includes('毛利') &&
+                    !f.includes('成本') &&
+                    !f.includes('占比') &&
+                    !f.includes('率') &&
+                    !f.includes('统计')
+                );
+                if (patternMatch) {
+                    return patternMatch;
+                }
+            }
+        }
+        
+        // 4. 检查是否有index字段
+        if (data.index !== undefined) {
+            return 'index';
+        }
+        
+        return null;
+    }
+    
+    // 根据分析类型定义可能的字段模式
+    const fieldPatterns = {
+        'product': ['产品', 'product', 'sku', '物料', '商品'],
+        'customer': ['客户', 'customer', 'client', '买家'],
+        'region': ['地区', 'region', '区域', '省份', 'area']
+    };
+    const possiblePatterns = fieldPatterns[currentAnalysisType] || [];
+    
+    // 在盈利项目中查找实际字段名
+    let profitableFieldName = groupField;
+    if (profitableItems.length > 0) {
+        const detectedField = findMatchingField(profitableItems[0], groupField, possiblePatterns);
+        if (detectedField && detectedField !== groupField) {
+            console.log(`- 在盈利项目中找到匹配字段: '${detectedField}' (原始: '${groupField}')`);
+            profitableFieldName = detectedField;
+        }
+    }
+    
+    // 在散点数据中查找实际字段名
+    let scatterFieldName = groupField;
+    if (originalQuadrantData.scatter_data.length > 0) {
+        const detectedField = findMatchingField(originalQuadrantData.scatter_data[0], groupField, possiblePatterns);
+        if (detectedField && detectedField !== groupField) {
+            console.log(`- 在散点数据中找到匹配字段: '${detectedField}' (原始: '${groupField}')`);
+            scatterFieldName = detectedField;
+        }
+    }
+
+    // 创建盈利项目名称集合，使用检测到的字段名
+    let profitableItemNames = new Set(profitableItems.map(item => {
+        const name = item[profitableFieldName];
+        if (name === undefined || name === null) {
+            console.log(`警告：盈利项目中发现空名称 (字段: ${profitableFieldName}):`, item);
+        }
+        return name;
+    }).filter(name => name !== undefined && name !== null));
+
+    // 如果没有找到任何名称，尝试其他可能的字段名
+    if (profitableItemNames.size === 0 && profitableItems.length > 0) {
+        console.log('尝试使用其他字段名...');
+        const firstItem = profitableItems[0];
+        const possibleFields = Object.keys(firstItem);
+        console.log('可用字段:', possibleFields);
+
+        // 尝试找到包含名称的字段
+        for (const field of possibleFields) {
+            if (field.includes('名称') || field.includes('客户') || field.includes('产品') || field.includes('地区')) {
+                console.log('尝试字段:', field);
+                profitableItemNames = new Set(profitableItems.map(item => item[field]).filter(name => name !== undefined && name !== null));
+                if (profitableItemNames.size > 0) {
+                    console.log('找到匹配字段:', field);
+                    break;
+                }
+            }
+        }
+    }
+
+    console.log('- 盈利项目名称集合大小:', profitableItemNames.size);
+    console.log('- 盈利项目名称示例:', Array.from(profitableItemNames).slice(0, 5));
+
+    // 调试：检查散点数据中的名称，使用检测到的字段名
+    const scatterItemNames = new Set(originalQuadrantData.scatter_data.map(item => {
+        const name = item[scatterFieldName];
+        if (name === undefined || name === null) {
+            console.log(`警告：散点数据中发现空名称 (字段: ${scatterFieldName}):`, item);
+        }
+        return name;
+    }).filter(name => name !== undefined && name !== null));
+
+    console.log('- 散点数据名称集合大小:', scatterItemNames.size);
+    console.log('- 散点数据名称示例:', Array.from(scatterItemNames).slice(0, 5));
+
+    // 调试：检查名称匹配情况
+    const matchingNames = Array.from(profitableItemNames).filter(name => scatterItemNames.has(name));
+    console.log('- 匹配的名称数量:', matchingNames.length);
+    console.log('- 匹配的名称示例:', matchingNames.slice(0, 5));
+    
+    // 创建一个模糊匹配函数
+    function fuzzyMatch(name1, name2) {
+        if (!name1 || !name2) return false;
+        
+        // 去除空格和特殊字符
+        const clean1 = name1.toString().replace(/[\s\-_]/g, '').toLowerCase();
+        const clean2 = name2.toString().replace(/[\s\-_]/g, '').toLowerCase();
+        
+        // 完全匹配
+        if (clean1 === clean2) return true;
+        
+        // 包含关系
+        if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
+        
+        // 去除后缀后匹配（如 "ABC公司" 和 "ABC"）
+        const suffix = ['公司', '有限公司', '股份有限公司', '集团', '厂', '店'];
+        for (const s of suffix) {
+            const cleaned1 = clean1.replace(new RegExp(s + '$'), '');
+            const cleaned2 = clean2.replace(new RegExp(s + '$'), '');
+            if (cleaned1 === cleaned2) return true;
+        }
+        
+        return false;
+    }
+    
+    // 如果没有匹配的名称，尝试模糊匹配
+    if (matchingNames.length === 0 && profitableItemNames.size > 0 && scatterItemNames.size > 0) {
+        console.log('\n警告：没有精确匹配的名称，尝试模糊匹配...');
+        
+        // 尝试模糊匹配
+        const fuzzyMatchedNames = [];
+        profitableItemNames.forEach(profitName => {
+            scatterItemNames.forEach(scatterName => {
+                if (fuzzyMatch(profitName, scatterName)) {
+                    fuzzyMatchedNames.push({ profitName, scatterName });
+                }
+            });
+        });
+        
+        console.log('- 模糊匹配结果数量:', fuzzyMatchedNames.length);
+        if (fuzzyMatchedNames.length > 0) {
+            console.log('- 模糊匹配示例:', fuzzyMatchedNames.slice(0, 5));
+        }
+    }
+
+    // 筛选四象限数据，只保留盈利项目，使用检测到的字段名
+    const filteredScatterData = originalQuadrantData.scatter_data.filter(item => {
+        const itemName = item[scatterFieldName];
+        
+        // 首先尝试精确匹配
+        if (profitableItemNames.has(itemName)) {
+            return true;
+        }
+        
+        // 如果没有精确匹配，尝试模糊匹配
+        for (const profitName of profitableItemNames) {
+            if (fuzzyMatch && fuzzyMatch(itemName, profitName)) {
+                return true;
+            }
+        }
+        
+        return false;
+    });
+
+    console.log('- 筛选后散点数据数量:', filteredScatterData.length);
+
+    // 创建筛选后的四象限数据对象
+    const filteredQuadrantData = {
+        ...originalQuadrantData,
+        scatter_data: filteredScatterData
+    };
+
+    console.log('- 筛选后的四象限数据对象:', filteredQuadrantData);
+
+    // 更新全局分析结果中的四象限数据
+    analysisResult.quadrant_analysis = filteredQuadrantData;
+
+    // 标记为已筛选状态
+    isQuadrantFiltered = true;
+    currentFilterType = 'profitable';
+
+    console.log('- 开始重新渲染四象限图...');
+    console.log('- 更新前的四象限数据点数量:', analysisResult.quadrant_analysis.scatter_data.length);
+
+    // 重新渲染四象限图
+    displayQuadrantAnalysis();
+
+    console.log('- 四象限图渲染完成');
+    console.log('- 更新后的四象限数据点数量:', analysisResult.quadrant_analysis.scatter_data.length);
+
+    // 显示筛选提示和重置按钮
+    showFilterNotification();
+
+    // 显示成功消息
+    showMessage(`已筛选显示 ${filteredScatterData.length} 个盈利项目`, 'success');
+
+    console.log('=== 盈利项目筛选完成 ===');
+}
+
+// 重置四象限图到全部数据
+function resetQuadrantFilter() {
+    if (!originalQuadrantData) {
+        return;
+    }
+
+    // 恢复原始数据
+    analysisResult.quadrant_analysis = JSON.parse(JSON.stringify(originalQuadrantData));
+
+    // 重新渲染四象限图
+    displayQuadrantAnalysis();
+
+    // 标记为未筛选状态
+    isQuadrantFiltered = false;
+    currentFilterType = null;
+
+    // 隐藏筛选提示
+    hideFilterNotification();
+
+    showMessage('已重置为显示全部数据', 'success');
+}
+
+// 显示筛选通知
+function showFilterNotification() {
+    // 根据筛选类型确定显示文本和样式
+    const filterConfig = {
+        'loss': {
+            text: '当前显示：仅亏损项目',
+            icon: '🔍',
+            bgClass: 'filter-notification-loss'
+        },
+        'profitable': {
+            text: '当前显示：仅盈利项目',
+            icon: '💰',
+            bgClass: 'filter-notification-profitable'
+        }
+    };
+
+    const config = filterConfig[currentFilterType] || filterConfig['loss'];
+
+    // 检查是否已存在通知
+    let notification = document.getElementById('quadrant-filter-notification');
+
+    if (!notification) {
+        // 创建通知元素
+        notification = document.createElement('div');
+        notification.id = 'quadrant-filter-notification';
+        notification.className = 'filter-notification';
+
+        // 将通知插入到四象限图容器上方
+        const quadrantContainer = document.getElementById('quadrantChart').parentElement;
+        quadrantContainer.insertBefore(notification, document.getElementById('quadrantChart'));
+    }
+
+    // 更新通知内容和样式
+    notification.className = `filter-notification ${config.bgClass}`;
+    notification.innerHTML = `
+        <div class="filter-notification-content">
+            <span class="filter-icon">${config.icon}</span>
+            <span class="filter-text">${config.text}</span>
+            <button class="reset-filter-btn" onclick="resetQuadrantFilter()">
+                <span>↻</span> 显示全部
+            </button>
+        </div>
+    `;
+
+    // 显示通知（添加动画效果）
+    notification.style.display = 'block';
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+}
+
+// 隐藏筛选通知
+function hideFilterNotification() {
+    const notification = document.getElementById('quadrant-filter-notification');
+    if (notification) {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 300);
+    }
 }
 
 // 贡献度分析图
@@ -1542,7 +2124,8 @@ function filterTableByItem(item) {
     const filteredData = analysisResult.aggregated_data.filter(row =>
         row[groupField] === itemName
     );
-    displayTableData(filteredData);
+    const fieldConfig = getTableFieldConfig();
+    displayTableData(filteredData, fieldConfig);
 }
 
 // 导出报告

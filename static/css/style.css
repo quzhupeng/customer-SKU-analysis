@@ -947,3 +947,181 @@ body {
         font-size: 0.75rem; /* 稍微调整数值字体大小 */
     }
 }
+
+/* 筛选通知样式 */
+.filter-notification {
+    display: none;
+    color: white;
+    border-radius: 10px;
+    margin-bottom: 15px;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+/* 亏损项目筛选通知 */
+.filter-notification-loss {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+}
+
+/* 盈利项目筛选通知 */
+.filter-notification-profitable {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+}
+
+.filter-notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.filter-notification-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    gap: 15px;
+}
+
+.filter-icon {
+    font-size: 1.2rem;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+.filter-text {
+    flex: 1;
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.reset-filter-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.reset-filter-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.reset-filter-btn:active {
+    transform: translateY(0);
+}
+
+/* 筛选通知响应式设计 */
+@media (max-width: 768px) {
+    .filter-notification-content {
+        padding: 10px 15px;
+        gap: 10px;
+    }
+
+    .filter-text {
+        font-size: 0.85rem;
+    }
+
+    .reset-filter-btn {
+        font-size: 0.8rem;
+        padding: 5px 10px;
+    }
+}
+
+/* 筛选通知样式 */
+.filter-notification {
+    display: none;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    color: white;
+    border-radius: 10px;
+    margin-bottom: 15px;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+.filter-notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.filter-notification-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    gap: 15px;
+}
+
+.filter-icon {
+    font-size: 1.2rem;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+.filter-text {
+    flex: 1;
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.reset-filter-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.reset-filter-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.reset-filter-btn:active {
+    transform: translateY(0);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .filter-notification-content {
+        padding: 10px 15px;
+        gap: 10px;
+    }
+
+    .filter-text {
+        font-size: 0.85rem;
+    }
+
+    .reset-filter-btn {
+        font-size: 0.8rem;
+        padding: 5px 10px;
+    }
+}

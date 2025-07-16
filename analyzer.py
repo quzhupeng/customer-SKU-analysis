@@ -426,8 +426,21 @@ class DataAnalyzer:
                 'items': safe_to_dict(quadrant_data)
             }
 
+# Ensure the group field is included in scatter data output
+        group_column = self._get_group_column(analysis_type)
+        scatter_data_output = safe_to_dict(data)
+        for item in scatter_data_output:
+            # Add the group field explicitly to each item
+            if group_column in data.columns:
+                # Find the corresponding row in the original data to get the group value
+                matching_rows = data[data.index == item.get('index', -1)]
+                if not matching_rows.empty:
+                    item['group'] = matching_rows.iloc[0][group_column]
+                elif group_column in item:
+                    item['group'] = item[group_column]
+
         return {
-            'scatter_data': safe_to_dict(data),
+            'scatter_data': scatter_data_output,
             'x_avg': x_avg,
             'y_avg': y_avg,
             'x_label': config['x_label'],
@@ -739,6 +752,31 @@ class DataAnalyzer:
         total_loss = abs(loss_making[profit_column].sum()) if len(loss_making) > 0 else 0
         net_profit = total_profit - total_loss
 
+# Ensure the group field is included in profit/loss item output
+        group_column = self._get_group_column(analysis_type)
+        profitable_output = safe_to_dict(profitable)
+        loss_making_output = safe_to_dict(loss_making)
+
+        # Add group field to profitable items
+        for item in profitable_output:
+            if group_column in profitable.columns:
+                # Find the corresponding row to get the group value
+                matching_rows = profitable[profitable.index == item.get('index', -1)]
+                if not matching_rows.empty:
+                    item['group'] = matching_rows.iloc[0][group_column]
+                elif group_column in item:
+                    item['group'] = item[group_column]
+
+        # Add group field to loss-making items
+        for item in loss_making_output:
+            if group_column in loss_making.columns:
+                # Find the corresponding row to get the group value
+                matching_rows = loss_making[loss_making.index == item.get('index', -1)]
+                if not matching_rows.empty:
+                    item['group'] = matching_rows.iloc[0][group_column]
+                elif group_column in item:
+                    item['group'] = item[group_column]
+
         return {
             'summary': {
                 'total_count': total_count,
@@ -750,8 +788,8 @@ class DataAnalyzer:
                 'total_loss': round(total_loss, 2),
                 'net_profit': round(net_profit, 2)
             },
-            'profitable_items': safe_to_dict(profitable),
-            'loss_making_items': safe_to_dict(loss_making)
+            'profitable_items': profitable_output,
+            'loss_making_items': loss_making_output
         }
 
     def _contribution_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
