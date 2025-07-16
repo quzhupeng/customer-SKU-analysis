@@ -599,51 +599,120 @@ class DataAnalyzer:
             }
 
     def _distribution_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
-        """分布区间分析"""
-        # 根据分析类型定义区间
+        """分布区间分析 - 升级版：提供双指标统计和价值维度分析"""
+        # 根据分析类型定义区间配置
         interval_configs = {
             'product': {
-                'field': 'quantity',
+                'primary_field': 'quantity',  # 主要分组字段
+                'value_field': 'amount',      # 价值字段
                 'intervals': [0, 5, 10, 20, 50, float('inf')],
                 'labels': ['<5吨', '5-10吨', '10-20吨', '20-50吨', '>50吨'],
-                'title': '销量分布区间'
+                'title': '销量分布区间分析',
+                'primary_label': '销量(吨)',
+                'value_label': '销售金额(万元)'
             },
             'customer': {
-                'field': 'amount',
+                'primary_field': 'amount',
+                'value_field': 'amount',      # 对于客户分析，采购金额既是分组字段也是价值字段
                 'intervals': [0, 10, 50, 100, 500, float('inf')],
                 'labels': ['<10万', '10-50万', '50-100万', '100-500万', '>500万'],
-                'title': '采购金额分布区间'
+                'title': '采购金额分布区间分析',
+                'primary_label': '采购金额(万元)',
+                'value_label': '采购金额(万元)'
             },
             'region': {
-                'field': 'amount',
+                'primary_field': 'amount',
+                'value_field': 'amount',
                 'intervals': [0, 50, 200, 500, 1000, float('inf')],
                 'labels': ['<50万', '50-200万', '200-500万', '500-1000万', '>1000万'],
-                'title': '销售金额分布区间'
+                'title': '销售金额分布区间分析',
+                'primary_label': '销售金额(万元)',
+                'value_label': '销售金额(万元)'
             }
         }
 
         config = interval_configs[analysis_type]
-        if config['field'] not in self.field_mapping:
-            raise ValueError(f"缺少分布分析所需字段: {config['field']}")
-        field_column = self.field_mapping[config['field']]
+
+        # 检查必需字段
+        if config['primary_field'] not in self.field_mapping:
+            raise ValueError(f"缺少分布分析所需字段: {config['primary_field']}")
+        if config['value_field'] not in self.field_mapping:
+            raise ValueError(f"缺少分布分析所需字段: {config['value_field']}")
+
+        primary_column = self.field_mapping[config['primary_field']]
+        value_column = self.field_mapping[config['value_field']]
 
         # 创建区间分组
-        data['区间'] = pd.cut(data[field_column],
+        data['区间'] = pd.cut(data[primary_column],
                            bins=config['intervals'],
                            labels=config['labels'],
                            right=False)
 
-        # 统计各区间数据
-        interval_stats = data.groupby('区间', observed=True).agg({
-            field_column: ['count', 'sum', 'mean']
-        }).round(2)
+        # 双指标统计：数量统计 + 价值统计
+        if config['primary_field'] == config['value_field']:
+            # 当主要字段和价值字段相同时（如客户分析），只对一个字段进行聚合
+            interval_stats = data.groupby('区间', observed=True).agg({
+                primary_column: ['count', 'sum', 'mean']
+            }).round(2)
+            interval_stats.columns = ['项目数量', '价值总和', '价值平均']
+        else:
+            # 当主要字段和价值字段不同时（如产品分析），对两个字段分别聚合
+            interval_stats = data.groupby('区间', observed=True).agg({
+                primary_column: ['count', 'sum', 'mean'],
+                value_column: ['sum', 'mean']
+            }).round(2)
+            interval_stats.columns = ['项目数量', '主要指标总和', '主要指标平均', '价值总和', '价值平均']
 
-        interval_stats.columns = ['数量', '总值', '平均值']
-        interval_stats['占比'] = (interval_stats['数量'] / len(data) * 100).round(2)
+        # 计算百分比
+        total_count = len(data)
+        total_value = data[value_column].sum()
+
+        interval_stats['数量占比'] = (interval_stats['项目数量'] / total_count * 100).round(1)
+        interval_stats['价值占比'] = (interval_stats['价值总和'] / total_value * 100).round(1)
+
+        # 计算平均价值（价值总和 / 项目数量）
+        interval_stats['单项平均价值'] = (interval_stats['价值总和'] / interval_stats['项目数量']).round(2)
+
+        # 重置索引以便转换为字典
+        interval_stats_reset = interval_stats.reset_index()
+
+        # 为每个区间添加详细项目列表（用于下钻功能）
+        interval_details = {}
+        group_column = self._get_group_column(analysis_type)
+
+        for interval_name in config['labels']:
+            interval_data = data[data['区间'] == interval_name]
+            if not interval_data.empty:
+                # 获取该区间的所有项目详情
+                items = []
+                for _, row in interval_data.iterrows():
+                    item = {
+                        'name': row[group_column],
+                        'primary_value': round(row[primary_column], 2),
+                        'value': round(row[value_column], 2)
+                    }
+                    # 添加其他有用字段
+                    if 'profit' in self.field_mapping:
+                        item['profit'] = round(row[self.field_mapping['profit']], 2)
+                    items.append(item)
+
+                # 按价值降序排序
+                items.sort(key=lambda x: x['value'], reverse=True)
+                interval_details[interval_name] = items
 
         return {
             'title': config['title'],
-            'interval_data': safe_to_dict(interval_stats.reset_index()),
+            'primary_label': config['primary_label'],
+            'value_label': config['value_label'],
+            'interval_data': safe_to_dict(interval_stats_reset),
+            'interval_details': interval_details,
+            'total_count': total_count,
+            'total_value': round(total_value, 2),
+            'analysis_summary': {
+                'highest_count_interval': interval_stats_reset.loc[interval_stats_reset['项目数量'].idxmax(), '区间'],
+                'highest_value_interval': interval_stats_reset.loc[interval_stats_reset['价值总和'].idxmax(), '区间'],
+                'avg_value_per_item': round(total_value / total_count, 2)
+            },
             'raw_data_with_intervals': safe_to_dict(data)
         }
 

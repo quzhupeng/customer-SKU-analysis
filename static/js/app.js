@@ -667,7 +667,7 @@ function getSecondStatGroup(stats) {
         return `
             <div class="stat-group">
                 <div class="stat-label">吨毛利(元/吨)</div>
-                <div class="stat-value">数量: ${stats.ton_profit}</div>
+                <div class="stat-value">${stats.ton_profit}</div>
                 <div class="stat-value">占比: -</div>
             </div>
         `;
@@ -890,7 +890,7 @@ function formatNumber(value) {
     });
 }
 
-// 分布图
+// 分布图 - 升级版：条形图展示价值维度
 function displayDistributionChart() {
     const distributionData = analysisResult.additional_analysis.distribution_analysis;
     const chartContainer = document.getElementById('distributionChart');
@@ -900,40 +900,284 @@ function displayDistributionChart() {
 
     const data = distributionData.interval_data;
     const categories = data.map(item => item.区间);
-    const values = data.map(item => item.数量);
+    const values = data.map(item => item.价值总和);
+    const counts = data.map(item => item.项目数量);
+    const valuePercentages = data.map(item => item.价值占比);
+    const countPercentages = data.map(item => item.数量占比);
 
     const option = {
         title: {
             text: distributionData.title,
             left: 'center',
             textStyle: {
-                fontSize: 14
+                fontSize: 16,
+                fontWeight: 'bold'
+            },
+            subtextStyle: {
+                fontSize: 12
             }
         },
         tooltip: {
-            trigger: 'item',
-            formatter: '{b}: {c} ({d}%)'
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow'
+            },
+            formatter: function(params) {
+                const dataIndex = params[0].dataIndex;
+                const interval = categories[dataIndex];
+                const value = values[dataIndex];
+                const count = counts[dataIndex];
+                const valuePercent = valuePercentages[dataIndex];
+                const countPercent = countPercentages[dataIndex];
+                const avgValue = data[dataIndex].单项平均价值;
+
+                return `
+                    <div style="font-weight: bold; margin-bottom: 8px;">${interval}</div>
+                    <div style="margin-bottom: 4px;">
+                        <span style="color: #666;">项目数量:</span>
+                        <span style="font-weight: bold;">${count}</span>
+                        <span style="color: #999;">(${countPercent}%)</span>
+                    </div>
+                    <div style="margin-bottom: 4px;">
+                        <span style="color: #666;">${distributionData.value_label}:</span>
+                        <span style="font-weight: bold; color: #1890ff;">${value.toFixed(0)}</span>
+                        <span style="color: #999;">(${valuePercent}%)</span>
+                    </div>
+                    <div style="margin-bottom: 4px;">
+                        <span style="color: #666;">单项平均价值:</span>
+                        <span style="font-weight: bold; color: #52c41a;">${avgValue.toFixed(0)}</span>
+                    </div>
+                    <div style="margin-top: 8px; color: #999; font-size: 12px;">
+                        点击查看详细项目列表
+                    </div>
+                `;
+            }
+        },
+        grid: {
+            left: '15%',
+            right: '4%',
+            bottom: '15%',
+            top: '15%',
+            containLabel: true
+        },
+        xAxis: {
+            type: 'category',
+            data: categories,
+            name: '分布区间',
+            nameLocation: 'middle',
+            nameGap: 30,
+            axisLabel: {
+                rotate: 0,
+                interval: 0,
+                fontSize: 11
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: distributionData.value_label,
+            nameLocation: 'middle',
+            nameGap: 50,
+            axisLabel: {
+                formatter: function(value) {
+                    return value >= 10000 ? (value/10000).toFixed(0) + '万' : value.toFixed(0);
+                }
+            }
         },
         series: [{
-            type: 'pie',
-            radius: '60%',
-            data: categories.map((cat, index) => ({
-                name: cat,
-                value: values[index]
-            })),
+            type: 'bar',
+            data: values,
             itemStyle: {
-                borderRadius: 5,
-                borderColor: '#fff',
-                borderWidth: 2
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#4facfe' },
+                    { offset: 1, color: '#00f2fe' }
+                ]),
+                borderRadius: [4, 4, 0, 0]
             },
             label: {
                 show: true,
-                formatter: '{b}\n{c}'
+                position: 'top',
+                formatter: function(params) {
+                    const dataIndex = params.dataIndex;
+                    const count = counts[dataIndex];
+                    const valuePercent = valuePercentages[dataIndex];
+                    return `${count}项\n${valuePercent}%`;
+                },
+                fontSize: 10,
+                color: '#666'
+            },
+            emphasis: {
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#667eea' },
+                        { offset: 1, color: '#764ba2' }
+                    ])
+                }
             }
         }]
     };
 
     chart.setOption(option);
+
+    // 添加点击事件实现下钻功能
+    chart.on('click', function(params) {
+        if (params.componentType === 'series') {
+            const intervalName = params.name;
+            showIntervalDetails(intervalName, distributionData);
+        }
+    });
+}
+
+// 显示区间详细信息的下钻功能
+function showIntervalDetails(intervalName, distributionData) {
+    const details = distributionData.interval_details[intervalName];
+    if (!details || details.length === 0) {
+        alert('该区间暂无详细数据');
+        return;
+    }
+
+    // 创建模态框显示详细信息
+    const modal = document.createElement('div');
+    modal.className = 'interval-details-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    `;
+
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = `
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 80%;
+        max-height: 80%;
+        overflow: auto;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    `;
+
+    // 构建表格内容
+    let tableHtml = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: #333;">${intervalName} - 详细项目列表</h3>
+            <button onclick="this.closest('.interval-details-modal').remove()"
+                    style="background: #f5f5f5; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">
+                关闭
+            </button>
+        </div>
+        <div style="margin-bottom: 15px; color: #666;">
+            共 ${details.length} 个项目，点击表头可排序
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: left;">项目名称</th>
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                        onclick="sortIntervalTable(this, 'primary_value')">
+                        ${distributionData.primary_label} ↕
+                    </th>
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                        onclick="sortIntervalTable(this, 'value')">
+                        ${distributionData.value_label} ↕
+                    </th>`;
+
+    // 如果有毛利数据，添加毛利列
+    if (details[0].profit !== undefined) {
+        tableHtml += `
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                        onclick="sortIntervalTable(this, 'profit')">
+                        毛利(万元) ↕
+                    </th>`;
+    }
+
+    tableHtml += `
+                </tr>
+            </thead>
+            <tbody id="intervalDetailsTableBody">`;
+
+    // 添加数据行
+    details.forEach((item, index) => {
+        const rowStyle = index % 2 === 0 ? 'background: #fff;' : 'background: #f8f9fa;';
+        tableHtml += `
+            <tr style="${rowStyle}">
+                <td style="border: 1px solid #dee2e6; padding: 10px;">${item.name}</td>
+                <td style="border: 1px solid #dee2e6; padding: 10px; text-align: right;">${item.primary_value.toFixed(0)}</td>
+                <td style="border: 1px solid #dee2e6; padding: 10px; text-align: right; font-weight: bold; color: #1890ff;">${item.value.toFixed(0)}</td>`;
+
+        if (item.profit !== undefined) {
+            const profitColor = item.profit >= 0 ? '#52c41a' : '#ff4d4f';
+            tableHtml += `
+                <td style="border: 1px solid #dee2e6; padding: 10px; text-align: right; color: ${profitColor};">${item.profit.toFixed(0)}</td>`;
+        }
+
+        tableHtml += `</tr>`;
+    });
+
+    tableHtml += `
+            </tbody>
+        </table>
+        <div style="margin-top: 15px; color: #999; font-size: 12px;">
+            提示：点击表头可以按该列排序
+        </div>
+    `;
+
+    modalContent.innerHTML = tableHtml;
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+
+    // 点击模态框外部关闭
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+// 区间详情表格排序功能
+function sortIntervalTable(headerElement, sortField) {
+    const table = headerElement.closest('table');
+    const tbody = table.querySelector('#intervalDetailsTableBody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // 获取当前排序状态
+    const isAscending = !headerElement.dataset.sortAsc || headerElement.dataset.sortAsc === 'false';
+
+    // 重置所有表头的排序标识
+    table.querySelectorAll('th').forEach(th => {
+        th.innerHTML = th.innerHTML.replace(/[↑↓]/g, '↕');
+        delete th.dataset.sortAsc;
+    });
+
+    // 设置当前表头的排序标识
+    headerElement.dataset.sortAsc = isAscending;
+    headerElement.innerHTML = headerElement.innerHTML.replace('↕', isAscending ? '↑' : '↓');
+
+    // 排序数据
+    rows.sort((a, b) => {
+        let aValue, bValue;
+
+        if (sortField === 'primary_value') {
+            aValue = parseFloat(a.cells[1].textContent);
+            bValue = parseFloat(b.cells[1].textContent);
+        } else if (sortField === 'value') {
+            aValue = parseFloat(a.cells[2].textContent);
+            bValue = parseFloat(b.cells[2].textContent);
+        } else if (sortField === 'profit') {
+            aValue = parseFloat(a.cells[3].textContent);
+            bValue = parseFloat(b.cells[3].textContent);
+        }
+
+        return isAscending ? aValue - bValue : bValue - aValue;
+    });
+
+    // 重新插入排序后的行
+    rows.forEach(row => tbody.appendChild(row));
 }
 
 // 盈亏分析图

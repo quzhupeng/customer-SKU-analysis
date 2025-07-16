@@ -398,21 +398,31 @@ body {
 .strategy-card .stats-row {
     display: flex;
     justify-content: space-between;
-    gap: 15px;
+    gap: 4px; /* 进一步减少间距 */
+    flex-wrap: nowrap; /* 防止换行 */
+    align-items: flex-start; /* 顶部对齐 */
 }
 
 .strategy-card .stat-group {
-    flex: 1;
+    flex: 1 1 auto;
     text-align: center;
+    min-width: fit-content; /* 确保有足够宽度显示内容 */
+    padding: 0 1px; /* 减少内边距 */
+    overflow: visible; /* 允许内容溢出 */
 }
 
 .strategy-card .stat-label {
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     font-weight: bold;
     color: #333;
     margin-bottom: 6px;
     border-bottom: 1px solid #ddd;
     padding-bottom: 3px;
+    white-space: nowrap;
+    overflow: visible; /* 允许显示完整内容 */
+    text-overflow: clip; /* 不使用省略号 */
+    line-height: 1.1;
+    min-width: fit-content; /* 确保有足够宽度显示内容 */
 }
 
 .strategy-card .stat-value {
@@ -785,5 +795,155 @@ body {
     .chart-container .chart {
         height: 350px !important;
         min-height: 300px !important;
+    }
+}
+
+/* 区间详情模态框样式 */
+.interval-details-modal {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.interval-details-modal > div {
+    animation: slideInModal 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideInModal {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 表格排序样式 */
+.interval-details-modal th[onclick] {
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.interval-details-modal th[onclick]:hover {
+    background-color: #e9ecef !important;
+}
+
+.interval-details-modal tr:hover {
+    background-color: #f1f3f4 !important;
+}
+
+/* 模态框响应式设计 */
+@media (max-width: 768px) {
+    .interval-details-modal > div {
+        max-width: 95%;
+        max-height: 90%;
+        margin: 20px;
+    }
+
+    .interval-details-modal table {
+        font-size: 12px;
+    }
+
+    .interval-details-modal th,
+    .interval-details-modal td {
+        padding: 8px !important;
+    }
+}
+
+/* 区间详情模态框样式 */
+.interval-details-modal {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.interval-details-modal > div {
+    animation: slideInModal 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideInModal {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 表格排序样式 */
+.interval-details-modal th[onclick] {
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.interval-details-modal th[onclick]:hover {
+    background-color: #e9ecef !important;
+}
+
+.interval-details-modal tr:hover {
+    background-color: #f1f3f4 !important;
+}
+
+/* 策略卡片标签优化 */
+@media (max-width: 1200px) {
+    .strategy-card .stat-label {
+        font-size: 0.65rem; /* 在中等屏幕上进一步缩小字体 */
+    }
+
+    .strategy-card .stats-row {
+        gap: 3px; /* 进一步减少间距 */
+    }
+
+    .strategy-card .stat-group {
+        padding: 0; /* 移除内边距 */
+    }
+}
+
+/* 模态框响应式设计 */
+@media (max-width: 768px) {
+    .interval-details-modal > div {
+        max-width: 95%;
+        max-height: 90%;
+        margin: 20px;
+    }
+
+    .interval-details-modal table {
+        font-size: 12px;
+    }
+
+    .interval-details-modal th,
+    .interval-details-modal td {
+        padding: 8px !important;
+    }
+
+    /* 小屏幕上的策略卡片优化 */
+    .strategy-card .stat-label {
+        font-size: 0.6rem; /* 小屏幕上更小的字体 */
+        line-height: 1.0;
+        margin-bottom: 4px; /* 减少下边距 */
+        padding-bottom: 2px; /* 减少内边距 */
+    }
+
+    .strategy-card .stats-row {
+        gap: 2px; /* 小屏幕上最小间距 */
+    }
+
+    .strategy-card .stat-group {
+        padding: 0; /* 移除所有内边距 */
+        min-width: fit-content; /* 确保有足够宽度 */
+    }
+
+    .strategy-card .stat-value {
+        font-size: 0.75rem; /* 稍微调整数值字体大小 */
     }
 }
