@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品客户价值分析系统</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -11,7 +12,7 @@
     <div class="container">
         <!-- 页面标题 -->
         <header class="header">
-            <h1><i class="fas fa-chart-line"></i> 产品客户价值分析系统</h1>
+            <h1><i class="fas fa-chart-line"></i> 产品客户价值分析系统 <span style="font-size: 0.6em; color: white; margin-left: 15px;">| 春雪管理部</span></h1>
             <p class="subtitle">基于四象限分析的智能决策支持系统</p>
         </header>
 
@@ -125,6 +126,10 @@
                     <div class="chart-wrapper">
                         <div id="quadrantChart" class="chart"></div>
                     </div>
+                </div>
+                <!-- 四象限统计信息 -->
+                <div class="quadrant-stats-section">
+                    <h3 class="stats-title">四象限统计信息</h3>
                     <div class="strategy-cards" id="strategyCards">
                         <!-- 动态生成策略洞察卡片 -->
                     </div>
@@ -135,7 +140,14 @@
             <div class="additional-charts">
                 <div class="chart-row">
                     <div class="chart-container">
-                        <h3>帕累托分析</h3>
+                        <div class="chart-header">
+                            <h3>帕累托分析</h3>
+                            <div class="chart-controls">
+                                <select id="paretoDimensionSelect" class="dimension-select">
+                                    <option value="">选择分析维度...</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="paretoChart" class="chart"></div>
                     </div>
                     <div class="chart-container">
@@ -151,6 +163,27 @@
                     <div class="chart-container">
                         <h3>贡献度分析</h3>
                         <div id="contributionChart" class="chart"></div>
+                    </div>
+                </div>
+
+                <!-- 成本分析图表（辅助分析） -->
+                <div class="cost-analysis-section" id="costAnalysisSection" style="display: none;">
+                    <h3 class="section-title">成本分析（辅助分析）</h3>
+                    <div class="chart-row">
+                        <div class="chart-container">
+                            <h4>成本构成分析</h4>
+                            <div id="costCompositionChart" class="chart"></div>
+                        </div>
+                        <div class="chart-container">
+                            <h4>成本率分布</h4>
+                            <div id="costRateChart" class="chart"></div>
+                        </div>
+                    </div>
+                    <div class="chart-row">
+                        <div class="chart-container full-width">
+                            <h4>成本效率分析</h4>
+                            <div id="costEfficiencyChart" class="chart"></div>
+                        </div>
                     </div>
                 </div>
             </div>

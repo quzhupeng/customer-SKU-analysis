@@ -9,12 +9,11 @@ Date: 2025-07-15
 """
 
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any
 import logging
 from utils import (
     get_field_aliases, detect_field_type, validate_required_fields,
-    convert_units, calculate_quadrant, get_quadrant_info, format_number,
+    convert_units, calculate_quadrant, get_quadrant_info,
     safe_to_dict
 )
 
@@ -207,7 +206,7 @@ class DataAnalyzer:
             quantity_col = self.field_mapping['quantity']
             profit_col = self.field_mapping['profit']
             
-            # 吨毛利 = 毛利 / 数量 * 1000 (因为毛利是万元，数量是吨)
+            # 吨毛利 = 毛利 / 数量 * 10000 (因为毛利是万元，数量是吨)
             result_data['吨毛利'] = (result_data[profit_col] / result_data[quantity_col] * 10000).fillna(0)
         
         # 计算总成本
@@ -309,9 +308,9 @@ class DataAnalyzer:
                 'y_label': '吨毛利(元/吨)'
             },
             'customer': {
-                'x_field': 'amount',    # 采购金额(万元)
+                'x_field': 'amount',    # 销售金额(万元)
                 'y_field': 'profit',    # 毛利贡献(万元)
-                'x_label': '采购金额(万元)',
+                'x_label': '销售金额(万元)',
                 'y_label': '毛利贡献(万元)'
             },
             'region': {
@@ -347,7 +346,23 @@ class DataAnalyzer:
 
         # 计算平均值作为分割线
         x_avg = data[x_column].mean()
-        y_avg = data[y_column].mean()
+
+        # 对于按单品分析的吨毛利，需要特殊计算平均值
+        if analysis_type == 'product' and config['y_field'] == '吨毛利':
+            # 吨毛利平均值 = 毛利总和 / 数量总和 * 1000 (因为毛利是万元，数量是吨，转换为元/吨)
+            if 'profit' in self.field_mapping and 'quantity' in self.field_mapping:
+                profit_col = self.field_mapping['profit']
+                quantity_col = self.field_mapping['quantity']
+                total_profit = data[profit_col].sum()
+                total_quantity = data[quantity_col].sum()
+                if total_quantity > 0:
+                    y_avg = (total_profit / total_quantity) * 10000  # 万元转元，所以是10000而不是1000
+                else:
+                    y_avg = data[y_column].mean()
+            else:
+                y_avg = data[y_column].mean()
+        else:
+            y_avg = data[y_column].mean()
 
         # 为每个数据点分配象限
         data['象限'] = data.apply(
@@ -362,15 +377,52 @@ class DataAnalyzer:
         data['象限名称'] = data['象限'].map(lambda q: quadrant_info[q]['name'])
         data['建议策略'] = data['象限'].map(lambda q: quadrant_info[q]['strategy'])
 
+        # 计算总体统计数据
+        total_count = len(data)
+        total_profit = data[self.field_mapping['profit']].sum() if 'profit' in self.field_mapping else 0
+        total_amount = data[self.field_mapping['amount']].sum() if 'amount' in self.field_mapping else 0
+
         # 统计各象限数据
         quadrant_stats = {}
         for quadrant in [1, 2, 3, 4]:
             quadrant_data = data[data['象限'] == quadrant]
+            count = len(quadrant_data)
+
+            # 计算各种占比和数量
+            count_percentage = (count / total_count * 100) if total_count > 0 else 0
+
+            # 毛利贡献统计
+            profit_sum = quadrant_data[self.field_mapping['profit']].sum() if 'profit' in self.field_mapping else 0
+            profit_percentage = (profit_sum / total_profit * 100) if total_profit > 0 else 0
+
+            # 销售额统计
+            amount_sum = quadrant_data[self.field_mapping['amount']].sum() if 'amount' in self.field_mapping else 0
+            amount_percentage = (amount_sum / total_amount * 100) if total_amount > 0 else 0
+
+            # 数量统计（用于按单品分析）
+            quantity_sum = quadrant_data[self.field_mapping['quantity']].sum() if 'quantity' in self.field_mapping else 0
+            total_quantity = data[self.field_mapping['quantity']].sum() if 'quantity' in self.field_mapping else 0
+            quantity_percentage = (quantity_sum / total_quantity * 100) if total_quantity > 0 else 0
+
+            # 吨毛利计算（用于按单品分析）- 特殊计算方式
+            ton_profit = 0
+            if analysis_type == 'product' and 'profit' in self.field_mapping and 'quantity' in self.field_mapping:
+                if quantity_sum > 0:
+                    ton_profit = (profit_sum / quantity_sum) * 10000  # 万元转元/吨
+
             quadrant_stats[quadrant] = {
                 'name': quadrant_info[quadrant]['name'],
                 'description': quadrant_info[quadrant]['description'],
                 'strategy': quadrant_info[quadrant]['strategy'],
-                'count': len(quadrant_data),
+                'count': count,
+                'count_percentage': round(count_percentage, 0),
+                'profit_sum': round(profit_sum, 0),
+                'profit_percentage': round(profit_percentage, 0),
+                'amount_sum': round(amount_sum, 0),
+                'amount_percentage': round(amount_percentage, 0),
+                'quantity_sum': round(quantity_sum, 0),
+                'quantity_percentage': round(quantity_percentage, 0),
+                'ton_profit': round(ton_profit, 0),
                 'items': safe_to_dict(quadrant_data)
             }
 
@@ -383,13 +435,14 @@ class DataAnalyzer:
             'quadrant_stats': quadrant_stats
         }
 
-    def _perform_additional_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
+    def _perform_additional_analysis(self, data: pd.DataFrame, analysis_type: str, pareto_dimension: str = None) -> Dict[str, Any]:
         """
         执行额外的分析（帕累托、分布等）
 
         Args:
             data: 聚合后的数据
             analysis_type: 分析类型
+            pareto_dimension: 帕累托分析维度
 
         Returns:
             Dict[str, Any]: 额外分析结果
@@ -397,7 +450,7 @@ class DataAnalyzer:
         results = {}
 
         # 1. 帕累托分析
-        results['pareto_analysis'] = self._pareto_analysis(data, analysis_type)
+        results['pareto_analysis'] = self._pareto_analysis(data, analysis_type, pareto_dimension)
 
         # 2. 分布区间分析
         results['distribution_analysis'] = self._distribution_analysis(data, analysis_type)
@@ -408,21 +461,43 @@ class DataAnalyzer:
         # 4. 贡献度分析
         results['contribution_analysis'] = self._contribution_analysis(data, analysis_type)
 
+        # 5. 成本分析（如果有成本数据）
+        if self._has_cost_data(data):
+            results['cost_analysis'] = self._cost_analysis(data, analysis_type)
+
         return results
 
-    def _pareto_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
-        """帕累托分析（80/20法则）"""
-        # 根据分析类型选择排序字段
-        sort_field_map = {
-            'product': 'profit',  # 按毛利排序
-            'customer': 'amount',  # 按采购金额排序
-            'region': 'amount'    # 按销售金额排序
-        }
+    def _pareto_analysis(self, data: pd.DataFrame, analysis_type: str, pareto_dimension: str = None) -> Dict[str, Any]:
+        """
+        帕累托分析（80/20法则）
 
-        sort_field = sort_field_map[analysis_type]
-        if sort_field not in self.field_mapping:
-            raise ValueError(f"缺少帕累托分析所需字段: {sort_field}")
-        sort_column = self.field_mapping[sort_field]
+        Args:
+            data: 聚合后的数据
+            analysis_type: 分析类型 ('product', 'customer', 'region')
+            pareto_dimension: 帕累托分析维度 ('profit', 'amount', 'quantity')
+
+        Returns:
+            Dict[str, Any]: 帕累托分析结果
+        """
+        # 如果没有指定维度，使用默认维度
+        if pareto_dimension is None:
+            default_dimension_map = {
+                'product': 'profit',  # 单品默认按毛利排序
+                'customer': 'amount',  # 客户默认按采购金额排序
+                'region': 'amount'    # 地区默认按销售金额排序
+            }
+            pareto_dimension = default_dimension_map[analysis_type]
+
+        # 验证维度是否可用
+        available_dimensions = self._get_available_pareto_dimensions(analysis_type)
+        if pareto_dimension not in available_dimensions:
+            # 如果指定维度不可用，使用第一个可用维度
+            pareto_dimension = available_dimensions[0] if available_dimensions else 'profit'
+
+        # 获取排序字段
+        if pareto_dimension not in self.field_mapping:
+            raise ValueError(f"缺少帕累托分析所需字段: {pareto_dimension}")
+        sort_column = self.field_mapping[pareto_dimension]
 
         # 按指定字段降序排序
         sorted_data = data.sort_values(sort_column, ascending=False).reset_index(drop=True)
@@ -440,13 +515,88 @@ class DataAnalyzer:
         # 核心项目（贡献80%的项目）
         core_items = sorted_data.iloc[:pareto_80_index + 1]
 
+        # 获取维度标签和单位
+        dimension_info = self._get_pareto_dimension_info(pareto_dimension, analysis_type)
+
         return {
             'pareto_data': safe_to_dict(sorted_data),
             'core_items': safe_to_dict(core_items),
             'core_items_count': len(core_items),
             'core_items_percentage': round(len(core_items) / len(sorted_data) * 100, 2),
-            'total_items': len(sorted_data)
+            'total_items': len(sorted_data),
+            'dimension': pareto_dimension,
+            'dimension_info': dimension_info,
+            'available_dimensions': available_dimensions
         }
+
+    def _get_available_pareto_dimensions(self, analysis_type: str) -> List[str]:
+        """
+        获取可用的帕累托分析维度
+
+        Args:
+            analysis_type: 分析类型
+
+        Returns:
+            List[str]: 可用维度列表
+        """
+        # 基础维度配置
+        base_dimensions = {
+            'product': ['profit', 'quantity'],  # 单品：毛利、销量
+            'customer': ['amount', 'profit', 'quantity'],  # 客户：金额、毛利、销量
+            'region': ['amount', 'profit', 'quantity']     # 地区：金额、毛利、销量
+        }
+
+        # 获取该分析类型的基础维度
+        dimensions = base_dimensions.get(analysis_type, ['profit', 'amount', 'quantity'])
+
+        # 过滤出实际可用的维度（存在于字段映射中）
+        available = []
+        for dim in dimensions:
+            if dim in self.field_mapping:
+                available.append(dim)
+
+        return available
+
+    def _get_pareto_dimension_info(self, dimension: str, analysis_type: str) -> Dict[str, str]:
+        """
+        获取帕累托分析维度的显示信息
+
+        Args:
+            dimension: 维度名称
+            analysis_type: 分析类型
+
+        Returns:
+            Dict[str, str]: 维度信息
+        """
+        # 维度标签映射
+        dimension_labels = {
+            'profit': {
+                'product': {'name': '毛利', 'unit': '万元', 'description': '按产品毛利贡献排序'},
+                'customer': {'name': '毛利贡献', 'unit': '万元', 'description': '按客户毛利贡献排序'},
+                'region': {'name': '毛利贡献', 'unit': '万元', 'description': '按地区毛利贡献排序'}
+            },
+            'amount': {
+                'product': {'name': '销售金额', 'unit': '万元', 'description': '按产品销售金额排序'},
+                'customer': {'name': '采购金额', 'unit': '万元', 'description': '按客户采购金额排序'},
+                'region': {'name': '销售金额', 'unit': '万元', 'description': '按地区销售金额排序'}
+            },
+            'quantity': {
+                'product': {'name': '销量', 'unit': '吨', 'description': '按产品销量排序'},
+                'customer': {'name': '采购量', 'unit': '吨', 'description': '按客户采购量排序'},
+                'region': {'name': '销量', 'unit': '吨', 'description': '按地区销量排序'}
+            }
+        }
+
+        # 获取维度信息
+        if dimension in dimension_labels and analysis_type in dimension_labels[dimension]:
+            return dimension_labels[dimension][analysis_type]
+        else:
+            # 默认信息
+            return {
+                'name': dimension,
+                'unit': '',
+                'description': f'按{dimension}排序'
+            }
 
     def _distribution_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
         """分布区间分析"""
@@ -565,13 +715,14 @@ class DataAnalyzer:
 
         return contribution_data
 
-    def analyze(self, analysis_type: str, unit_confirmations: Dict[str, str]) -> Dict[str, Any]:
+    def analyze(self, analysis_type: str, unit_confirmations: Dict[str, str], pareto_dimension: str = None) -> Dict[str, Any]:
         """
         执行完整的数据分析
 
         Args:
             analysis_type: 分析类型 ('product', 'customer', 'region')
             unit_confirmations: 单位确认信息
+            pareto_dimension: 帕累托分析维度 ('profit', 'amount', 'quantity')
 
         Returns:
             Dict[str, Any]: 完整的分析结果
@@ -597,7 +748,7 @@ class DataAnalyzer:
         quadrant_analysis = self._perform_quadrant_analysis(aggregated_data, analysis_type)
 
         # 6. 其他分析（帕累托、分布等）
-        additional_analysis = self._perform_additional_analysis(aggregated_data, analysis_type)
+        additional_analysis = self._perform_additional_analysis(aggregated_data, analysis_type, pareto_dimension)
 
         return {
             'field_detection': field_detection,
@@ -613,3 +764,168 @@ class DataAnalyzer:
             'analysis_type': analysis_type,
             'unit_confirmations': unit_confirmations
         }
+
+    def _has_cost_data(self, data: pd.DataFrame) -> bool:
+        """检查是否有成本相关数据"""
+        cost_fields = ['cost', 'sea_freight', 'land_freight', 'agency_fee']
+        has_cost_fields = any(field in self.field_mapping for field in cost_fields)
+        has_total_cost = '总成本(万元)' in data.columns
+        has_cost_rate = '成本率' in data.columns
+
+        return has_cost_fields or has_total_cost or has_cost_rate
+
+    def _cost_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
+        """成本分析"""
+        cost_analysis = {}
+
+        # 1. 成本构成分析
+        cost_analysis['composition'] = self._cost_composition_analysis(data)
+
+        # 2. 成本率分布分析
+        if '成本率' in data.columns:
+            cost_analysis['rate_distribution'] = self._cost_rate_distribution(data)
+
+        # 3. 成本效率分析
+        cost_analysis['efficiency'] = self._cost_efficiency_analysis(data, analysis_type)
+
+        return cost_analysis
+
+    def _cost_composition_analysis(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """成本构成分析"""
+        cost_fields = {
+            'cost': '基础成本',
+            'sea_freight': '海运费',
+            'land_freight': '陆运费',
+            'agency_fee': '代办费'
+        }
+
+        composition_data = []
+        total_cost = 0
+
+        for field_key, field_name in cost_fields.items():
+            if field_key in self.field_mapping:
+                field_column = self.field_mapping[field_key]
+                if field_column in data.columns:
+                    field_sum = data[field_column].sum()
+                    composition_data.append({
+                        'name': field_name,
+                        'value': field_sum,
+                        'field': field_key
+                    })
+                    total_cost += field_sum
+
+        # 计算占比
+        for item in composition_data:
+            item['percentage'] = (item['value'] / total_cost * 100) if total_cost > 0 else 0
+
+        return {
+            'composition_data': composition_data,
+            'total_cost': total_cost
+        }
+
+    def _cost_rate_distribution(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """成本率分布分析"""
+        cost_rates = data['成本率'].dropna()
+
+        # 定义成本率区间
+        intervals = [0, 0.3, 0.5, 0.7, 0.8, 1.0]
+        labels = ['<30%', '30-50%', '50-70%', '70-80%', '>80%']
+
+        # 创建区间分组
+        cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False)
+
+        # 统计各区间数据
+        interval_stats = cost_rate_intervals.value_counts().sort_index()
+
+        distribution_data = []
+        for interval, count in interval_stats.items():
+            distribution_data.append({
+                'interval': str(interval),
+                'count': int(count),
+                'percentage': round(count / len(cost_rates) * 100, 2)
+            })
+
+        return {
+            'distribution_data': distribution_data,
+            'avg_cost_rate': float(cost_rates.mean()),
+            'median_cost_rate': float(cost_rates.median())
+        }
+
+    def _cost_efficiency_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
+        """成本效率分析"""
+        # 根据分析类型选择效率指标
+        efficiency_field_map = {
+            'product': 'quantity',  # 成本率 vs 销量
+            'customer': 'amount',   # 成本率 vs 采购金额
+            'region': 'amount'      # 成本率 vs 销售金额
+        }
+
+        efficiency_field = efficiency_field_map[analysis_type]
+
+        if '成本率' not in data.columns or efficiency_field not in self.field_mapping:
+            return {'error': '缺少成本效率分析所需字段'}
+
+        efficiency_column = self.field_mapping[efficiency_field]
+
+        # 计算平均值用于分类
+        avg_cost_rate = data['成本率'].mean()
+        avg_efficiency = data[efficiency_column].mean()
+
+        # 准备散点图数据
+        scatter_data = []
+        for _, row in data.iterrows():
+            if pd.notna(row['成本率']) and pd.notna(row[efficiency_column]):
+                scatter_data.append({
+                    'cost_rate': float(row['成本率']),
+                    'efficiency_value': float(row[efficiency_column]),
+                    'name': row[self._get_group_column(analysis_type)],
+                    'quadrant': self._classify_cost_efficiency(row['成本率'], row[efficiency_column], avg_cost_rate, avg_efficiency)
+                })
+
+        return {
+            'scatter_data': scatter_data,
+            'x_label': '成本率',
+            'y_label': self._get_efficiency_label(analysis_type),
+            'avg_cost_rate': float(avg_cost_rate),
+            'avg_efficiency': float(avg_efficiency)
+        }
+
+    def _classify_cost_efficiency(self, cost_rate: float, efficiency_value: float, avg_cost_rate: float, avg_efficiency: float) -> str:
+        """成本效率象限分类"""
+        if cost_rate < avg_cost_rate and efficiency_value > avg_efficiency:  # 低成本高效率
+            return 'efficient'
+        elif cost_rate < avg_cost_rate and efficiency_value <= avg_efficiency:  # 低成本低效率
+            return 'low_volume'
+        elif cost_rate >= avg_cost_rate and efficiency_value > avg_efficiency:  # 高成本高效率
+            return 'high_cost'
+        else:  # 高成本低效率
+            return 'inefficient'
+
+    def _get_efficiency_label(self, analysis_type: str) -> str:
+        """获取效率指标标签"""
+        labels = {
+            'product': '销量(吨)',
+            'customer': '采购金额(万元)',
+            'region': '销售金额(万元)'
+        }
+        return labels.get(analysis_type, '效率指标')
+
+    def _get_group_column(self, analysis_type: str) -> str:
+        """获取分组列名"""
+        group_field_map = {
+            'product': 'product',
+            'customer': 'customer',
+            'region': 'region'
+        }
+
+        field_key = group_field_map.get(analysis_type)
+        if field_key and field_key in self.field_mapping:
+            return self.field_mapping[field_key]
+
+        # 如果没有找到对应字段，返回第一个可用的字段
+        for field_key in ['product', 'customer', 'region']:
+            if field_key in self.field_mapping:
+                return self.field_mapping[field_key]
+
+        # 最后的备选方案
+        return list(self.raw_data.columns)[0] if len(self.raw_data.columns) > 0 else 'unknown'

@@ -150,7 +150,7 @@ def detect_fields():
 def analyze_data():
     """
     执行数据分析
-    接收: file_id, sheet_name, analysis_type, unit_confirmations
+    接收: file_id, sheet_name, analysis_type, unit_confirmations, pareto_dimension
     返回: 分析结果的JSON数据
     """
     try:
@@ -159,36 +159,92 @@ def analyze_data():
         sheet_name = data.get('sheet_name')
         analysis_type = data.get('analysis_type')  # 'product', 'customer', 'region'
         unit_confirmations = data.get('unit_confirmations', {})
-        
+        pareto_dimension = data.get('pareto_dimension')  # 'profit', 'amount', 'quantity'
+
         if not all([file_id, sheet_name, analysis_type]):
             return jsonify({'error': '缺少必要参数'}), 400
-        
+
         if file_id not in analysis_results:
             return jsonify({'error': '文件信息不存在，请重新上传'}), 400
-        
+
         file_info = analysis_results[file_id]['file_info']
         filepath = file_info['filepath']
-        
+
         # 创建数据分析器
         analyzer = DataAnalyzer(filepath, sheet_name)
-        
+
         # 执行分析
-        result = analyzer.analyze(analysis_type, unit_confirmations)
-        
+        result = analyzer.analyze(analysis_type, unit_confirmations, pareto_dimension)
+
         # 存储分析结果
         analysis_results[file_id]['analysis_result'] = result
         analysis_results[file_id]['analysis_type'] = analysis_type
         analysis_results[file_id]['unit_confirmations'] = unit_confirmations
-        
+        analysis_results[file_id]['pareto_dimension'] = pareto_dimension
+
         return jsonify({
             'success': True,
             'data': result,
             'message': '分析完成'
         })
-        
+
     except Exception as e:
         logger.error(f"数据分析失败: {str(e)}")
         return jsonify({'error': f'数据分析失败: {str(e)}'}), 500
+
+@app.route('/pareto-dimensions', methods=['POST'])
+def get_pareto_dimensions():
+    """
+    获取可用的帕累托分析维度
+    接收: file_id, sheet_name, analysis_type
+    返回: 可用维度列表
+    """
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        sheet_name = data.get('sheet_name')
+        analysis_type = data.get('analysis_type')
+
+        if not all([file_id, sheet_name, analysis_type]):
+            return jsonify({'error': '缺少必要参数'}), 400
+
+        if file_id not in analysis_results:
+            return jsonify({'error': '文件信息不存在，请重新上传'}), 400
+
+        file_info = analysis_results[file_id]['file_info']
+        filepath = file_info['filepath']
+
+        # 创建数据分析器
+        analyzer = DataAnalyzer(filepath, sheet_name)
+
+        # 检测字段
+        analyzer.detect_fields()
+
+        # 获取可用维度
+        available_dimensions = analyzer._get_available_pareto_dimensions(analysis_type)
+
+        # 获取维度信息
+        dimensions_info = []
+        for dim in available_dimensions:
+            info = analyzer._get_pareto_dimension_info(dim, analysis_type)
+            dimensions_info.append({
+                'value': dim,
+                'name': info['name'],
+                'unit': info['unit'],
+                'description': info['description']
+            })
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'available_dimensions': available_dimensions,
+                'dimensions_info': dimensions_info
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"获取帕累托维度失败: {str(e)}")
+        return jsonify({'error': f'获取帕累托维度失败: {str(e)}'}), 500
 
 @app.route('/export', methods=['POST'])
 def export_report():

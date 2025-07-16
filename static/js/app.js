@@ -2,6 +2,8 @@
 let currentFileId = null;
 let currentSheetName = null;
 let currentAnalysisType = null;
+let currentParetoDimension = null;
+let availableParetoDimensions = [];
 let analysisResult = null;
 let chartInstances = {}; // 存储图表实例
 
@@ -330,15 +332,24 @@ function displayUnitOptions() {
 async function handleStartAnalysis() {
     const quantityUnit = document.querySelector('input[name="quantityUnit"]:checked').value;
     const amountUnit = document.querySelector('input[name="amountUnit"]:checked').value;
-    
+
     const unitConfirmations = {
         quantity: quantityUnit,
         amount: amountUnit
     };
-    
-    showLoading('分析数据中，请稍候...');
-    
+
+    showLoading('获取分析选项中...');
+
     try {
+        // 首先获取可用的帕累托维度
+        await loadParetoDimensions();
+
+        showLoading('分析数据中，请稍候...');
+
+        // 使用默认维度进行初始分析
+        const defaultDimension = availableParetoDimensions.length > 0 ? availableParetoDimensions[0].value : null;
+        currentParetoDimension = defaultDimension;
+
         const response = await fetch('/analyze', {
             method: 'POST',
             headers: {
@@ -348,24 +359,134 @@ async function handleStartAnalysis() {
                 file_id: currentFileId,
                 sheet_name: currentSheetName,
                 analysis_type: currentAnalysisType,
-                unit_confirmations: unitConfirmations
+                unit_confirmations: unitConfirmations,
+                pareto_dimension: currentParetoDimension
             })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             analysisResult = result.data;
             displayAnalysisResults();
             analysisSection.style.display = 'block';
             hideLoading();
             showMessage('分析完成', 'success');
+
+            // 初始化帕累托维度选择器
+            initializeParetoDimensionSelector();
         } else {
             throw new Error(result.error);
         }
     } catch (error) {
         hideLoading();
         showMessage('分析失败: ' + error.message, 'error');
+    }
+}
+
+// 加载帕累托分析维度
+async function loadParetoDimensions() {
+    try {
+        const response = await fetch('/pareto-dimensions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_id: currentFileId,
+                sheet_name: currentSheetName,
+                analysis_type: currentAnalysisType
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            availableParetoDimensions = result.data.dimensions_info;
+        } else {
+            console.error('获取帕累托维度失败:', result.error);
+            availableParetoDimensions = [];
+        }
+    } catch (error) {
+        console.error('获取帕累托维度失败:', error);
+        availableParetoDimensions = [];
+    }
+}
+
+// 初始化帕累托维度选择器
+function initializeParetoDimensionSelector() {
+    const selector = document.getElementById('paretoDimensionSelect');
+    if (!selector) return;
+
+    // 清空现有选项
+    selector.innerHTML = '';
+
+    // 添加选项
+    availableParetoDimensions.forEach(dimension => {
+        const option = document.createElement('option');
+        option.value = dimension.value;
+        option.textContent = `${dimension.name}(${dimension.unit})`;
+        option.title = dimension.description;
+
+        // 设置默认选中
+        if (dimension.value === currentParetoDimension) {
+            option.selected = true;
+        }
+
+        selector.appendChild(option);
+    });
+
+    // 添加事件监听器
+    selector.addEventListener('change', handleParetoDimensionChange);
+}
+
+// 处理帕累托维度变更
+async function handleParetoDimensionChange(event) {
+    const newDimension = event.target.value;
+    if (newDimension === currentParetoDimension) return;
+
+    currentParetoDimension = newDimension;
+
+    showLoading('重新分析帕累托数据...');
+
+    try {
+        // 重新进行分析
+        const quantityUnit = document.querySelector('input[name="quantityUnit"]:checked').value;
+        const amountUnit = document.querySelector('input[name="amountUnit"]:checked').value;
+
+        const unitConfirmations = {
+            quantity: quantityUnit,
+            amount: amountUnit
+        };
+
+        const response = await fetch('/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                file_id: currentFileId,
+                sheet_name: currentSheetName,
+                analysis_type: currentAnalysisType,
+                unit_confirmations: unitConfirmations,
+                pareto_dimension: currentParetoDimension
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            analysisResult = result.data;
+            // 只更新帕累托图表
+            displayParetoChart();
+            hideLoading();
+            showMessage('帕累托分析已更新', 'success');
+        } else {
+            throw new Error(result.error);
+        }
+    } catch (error) {
+        hideLoading();
+        showMessage('更新帕累托分析失败: ' + error.message, 'error');
     }
 }
 
@@ -413,9 +534,21 @@ function displayQuadrantAnalysis() {
             trigger: 'item',
             formatter: function(params) {
                 const data = params.data[2];
+                // 格式化数值，销售金额和毛利贡献不保留小数
+                let xValue = params.data[0];
+                let yValue = params.data[1];
+
+                // 判断是否为金额或毛利相关字段，不保留小数
+                if (quadrantData.x_label.includes('金额') || quadrantData.x_label.includes('毛利')) {
+                    xValue = Math.round(xValue);
+                }
+                if (quadrantData.y_label.includes('金额') || quadrantData.y_label.includes('毛利')) {
+                    yValue = Math.round(yValue);
+                }
+
                 return `${getGroupFieldName()}: ${data[getGroupFieldName()]}<br/>
-                        ${quadrantData.x_label}: ${params.data[0]}<br/>
-                        ${quadrantData.y_label}: ${params.data[1]}<br/>
+                        ${quadrantData.x_label}: ${xValue}<br/>
+                        ${quadrantData.y_label}: ${yValue}<br/>
                         象限: ${data.象限名称}`;
             }
         },
@@ -449,44 +582,35 @@ function displayQuadrantAnalysis() {
                 color: function(params) {
                     const quadrant = params.data[2].象限;
                     const colors = {
-                        1: '#4CAF50',  // 绿色 - 明星
-                        2: '#FF9800',  // 橙色 - 金牛
-                        3: '#2196F3',  // 蓝色 - 潜力
-                        4: '#F44336'   // 红色 - 瘦狗
+                        1: '#F44336',  // 红色 - 明星/核心 (高高)
+                        2: '#FF9800',  // 橙色 - 潜力/成长 (低高)
+                        3: '#9E9E9E',  // 灰色 - 瘦狗/机会 (低低)
+                        4: '#4CAF50'   // 绿色 - 金牛/增利 (高低)
                     };
                     return colors[quadrant] || '#666';
                 }
-            }
-        }],
-        // 添加分割线
-        graphic: [
-            {
-                type: 'line',
-                shape: {
-                    x1: quadrantData.x_avg,
-                    y1: 0,
-                    x2: quadrantData.x_avg,
-                    y2: '100%'
-                },
-                style: {
-                    stroke: '#999',
-                    lineDash: [5, 5]
-                }
             },
-            {
-                type: 'line',
-                shape: {
-                    x1: 0,
-                    y1: quadrantData.y_avg,
-                    x2: '100%',
-                    y2: quadrantData.y_avg
+            // 添加分割线 - 使用markLine实现
+            markLine: {
+                silent: true,
+                symbol: 'none',
+                lineStyle: {
+                    color: '#333',
+                    type: 'solid',
+                    width: 3
                 },
-                style: {
-                    stroke: '#999',
-                    lineDash: [5, 5]
-                }
+                data: [
+                    {
+                        xAxis: quadrantData.x_avg,
+                        name: 'X平均线'
+                    },
+                    {
+                        yAxis: quadrantData.y_avg,
+                        name: 'Y平均线'
+                    }
+                ]
             }
-        ]
+        }]
     };
     
     chart.setOption(option);
@@ -528,6 +652,57 @@ function getGroupFieldName() {
     return fieldMap[currentAnalysisType];
 }
 
+function getGroupFieldLabel() {
+    const labelMap = {
+        'product': '产品名称',
+        'customer': '客户名称',
+        'region': '地区名称'
+    };
+    return labelMap[currentAnalysisType] || '名称';
+}
+
+// 根据分析类型获取第二个统计组
+function getSecondStatGroup(stats) {
+    if (currentAnalysisType === 'product') {
+        return `
+            <div class="stat-group">
+                <div class="stat-label">吨毛利(元/吨)</div>
+                <div class="stat-value">数量: ${stats.ton_profit}</div>
+                <div class="stat-value">占比: -</div>
+            </div>
+        `;
+    } else {
+        return `
+            <div class="stat-group">
+                <div class="stat-label">毛利贡献(万元)</div>
+                <div class="stat-value">数量: ${stats.profit_sum}</div>
+                <div class="stat-value">占比: ${stats.profit_percentage}%</div>
+            </div>
+        `;
+    }
+}
+
+// 根据分析类型获取第三个统计组
+function getThirdStatGroup(stats) {
+    if (currentAnalysisType === 'product') {
+        return `
+            <div class="stat-group">
+                <div class="stat-label">销量(吨)</div>
+                <div class="stat-value">数量: ${stats.quantity_sum}</div>
+                <div class="stat-value">占比: ${stats.quantity_percentage}%</div>
+            </div>
+        `;
+    } else {
+        return `
+            <div class="stat-group">
+                <div class="stat-label">销售额(万元)</div>
+                <div class="stat-value">数量: ${stats.amount_sum}</div>
+                <div class="stat-value">占比: ${stats.amount_percentage}%</div>
+            </div>
+        `;
+    }
+}
+
 // 显示策略卡片
 function displayStrategyCards() {
     const quadrantStats = analysisResult.quadrant_analysis.quadrant_stats;
@@ -538,17 +713,27 @@ function displayStrategyCards() {
     [1, 2, 3, 4].forEach(quadrant => {
         const stats = quadrantStats[quadrant];
         const colors = {
-            1: '#4CAF50',  // 绿色
-            2: '#FF9800',  // 橙色
-            3: '#2196F3',  // 蓝色
-            4: '#F44336'   // 红色
+            1: '#F44336',  // 红色 - 明星/核心 (高高)
+            2: '#FF9800',  // 橙色 - 潜力/成长 (低高)
+            3: '#9E9E9E',  // 灰色 - 瘦狗/机会 (低低)
+            4: '#4CAF50'   // 绿色 - 金牛/增利 (高低)
         };
 
         html += `
             <div class="strategy-card" style="border-left-color: ${colors[quadrant]}">
                 <h4>${stats.name}</h4>
                 <div class="description">${stats.description}</div>
-                <div class="count">数量: ${stats.count}</div>
+                <div class="stats-info">
+                    <div class="stats-row">
+                        <div class="stat-group">
+                            <div class="stat-label">SKU统计</div>
+                            <div class="stat-value">数量: ${stats.count}</div>
+                            <div class="stat-value">占比: ${stats.count_percentage}%</div>
+                        </div>
+                        ${getSecondStatGroup(stats)}
+                        ${getThirdStatGroup(stats)}
+                    </div>
+                </div>
                 <div class="strategy">${stats.strategy}</div>
             </div>
         `;
@@ -563,6 +748,14 @@ function displayAdditionalCharts() {
     displayDistributionChart();
     displayProfitLossChart();
     displayContributionChart();
+
+    // 显示成本分析图表（如果有成本数据）
+    if (analysisResult.additional_analysis.cost_analysis) {
+        displayCostAnalysisCharts();
+        document.getElementById('costAnalysisSection').style.display = 'block';
+    } else {
+        document.getElementById('costAnalysisSection').style.display = 'none';
+    }
 }
 
 // 帕累托图
@@ -577,11 +770,38 @@ function displayParetoChart() {
     const categories = data.map(item => item[getGroupFieldName()]);
     const values = data.map(item => item.累计占比);
 
+    // 获取维度信息用于显示
+    const dimensionInfo = paretoData.dimension_info || { name: '数值', unit: '' };
+    const dimensionLabel = dimensionInfo.unit ? `${dimensionInfo.name}(${dimensionInfo.unit})` : dimensionInfo.name;
+
     const option = {
+        title: {
+            text: `帕累托分析 - ${dimensionLabel}`,
+            left: 'center',
+            textStyle: {
+                fontSize: 14,
+                color: '#333'
+            }
+        },
         tooltip: {
             trigger: 'axis',
             axisPointer: {
                 type: 'cross'
+            },
+            formatter: function(params) {
+                const point = params[0];
+                const itemData = data[point.dataIndex];
+                const fieldName = getGroupFieldName();
+                const sortField = paretoData.dimension || 'profit';
+                const sortColumn = getSortColumnName(sortField);
+
+                return `
+                    <div style="text-align: left;">
+                        <strong>${point.name}</strong><br/>
+                        累计占比: ${point.value}%<br/>
+                        ${dimensionLabel}: ${formatNumber(itemData[sortColumn])}
+                    </div>
+                `;
             }
         },
         xAxis: {
@@ -622,6 +842,52 @@ function displayParetoChart() {
     };
 
     chart.setOption(option);
+}
+
+// 获取排序字段的列名
+function getSortColumnName(sortField) {
+    const fieldMapping = {
+        'profit': getFieldName('profit'),
+        'amount': getFieldName('amount'),
+        'quantity': getFieldName('quantity')
+    };
+    return fieldMapping[sortField] || sortField;
+}
+
+// 获取字段名称
+function getFieldName(fieldType) {
+    // 根据分析类型和字段类型返回对应的字段名
+    const fieldMappings = {
+        'product': {
+            'profit': '毛利',
+            'amount': '销售金额',
+            'quantity': '销量'
+        },
+        'customer': {
+            'profit': '毛利贡献',
+            'amount': '采购金额',
+            'quantity': '采购量'
+        },
+        'region': {
+            'profit': '毛利贡献',
+            'amount': '销售金额',
+            'quantity': '销量'
+        }
+    };
+
+    return fieldMappings[currentAnalysisType]?.[fieldType] || fieldType;
+}
+
+// 格式化数字显示
+function formatNumber(value) {
+    if (value === null || value === undefined) return '-';
+    if (typeof value !== 'number') return value;
+
+    // 保留2位小数并添加千分位分隔符
+    return value.toLocaleString('zh-CN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    });
 }
 
 // 分布图
@@ -769,34 +1035,103 @@ function displayDataTable() {
         return;
     }
 
+    // 定义字段显示顺序和格式化规则
+    const fieldConfig = getTableFieldConfig();
+
     // 生成表头
-    const columns = Object.keys(tableData[0]);
     let headerHtml = '<tr>';
-    columns.forEach(column => {
-        headerHtml += `<th>${column}</th>`;
+    fieldConfig.forEach(config => {
+        if (tableData[0].hasOwnProperty(config.key)) {
+            const sortable = config.format === 'number' || config.format === 'integer' || config.format === 'currency' || config.format === 'percent';
+            const sortIcon = sortable ? '<i class="fas fa-sort sort-icon"></i>' : '';
+            const clickHandler = sortable ? `onclick="sortTable('${config.key}')"` : '';
+            const cursorStyle = sortable ? 'cursor: pointer;' : '';
+
+            headerHtml += `<th class="${config.className || ''}" style="${config.headerStyle || ''}${cursorStyle}" ${clickHandler}>
+                ${config.label}${sortIcon}
+            </th>`;
+        }
     });
     headerHtml += '</tr>';
     tableHeader.innerHTML = headerHtml;
 
     // 生成表格数据
-    displayTableData(tableData);
+    displayTableData(tableData, fieldConfig);
 
     // 设置搜索和筛选
     setupTableControls(tableData);
 }
 
+// 获取表格字段配置
+function getTableFieldConfig() {
+    const baseConfig = [
+        { key: getGroupFieldName(), label: getGroupFieldLabel(), className: 'col-name', headerStyle: 'min-width: 150px;' },
+        { key: '象限名称', label: '象限分类', className: 'col-quadrant', headerStyle: 'min-width: 100px;' },
+    ];
+
+    // 根据分析类型添加特定字段
+    if (currentAnalysisType === 'product') {
+        baseConfig.push(
+            { key: '销量(吨)', label: '销量(吨)', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'number' },
+            { key: '吨毛利', label: '吨毛利(元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'currency' },
+            { key: '总金额(万元)', label: '总金额(万元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
+            { key: '总毛利(万元)', label: '总毛利(万元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' }
+        );
+    } else if (currentAnalysisType === 'customer') {
+        baseConfig.push(
+            { key: '采购金额(万元)', label: '采购金额(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
+            { key: '毛利贡献(万元)', label: '毛利贡献(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
+            { key: '采购数量(吨)', label: '采购数量(吨)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
+            { key: '客户毛利率', label: '毛利率(%)', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'percent' }
+        );
+    } else if (currentAnalysisType === 'region') {
+        baseConfig.push(
+            { key: '地区销售金额(万元)', label: '销售金额(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
+            { key: '地区毛利贡献(万元)', label: '毛利贡献(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
+            { key: '地区销售数量(吨)', label: '销售数量(吨)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
+            { key: '地区客户数量', label: '客户数量', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'integer' }
+        );
+    }
+
+    // 添加成本相关字段（如果存在）
+    const costFields = [
+        { key: '总成本(万元)', label: '总成本(万元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
+        { key: '成本率', label: '成本率(%)', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'percent' }
+    ];
+
+    costFields.forEach(field => {
+        if (analysisResult.aggregated_data && analysisResult.aggregated_data[0] && analysisResult.aggregated_data[0].hasOwnProperty(field.key)) {
+            baseConfig.push(field);
+        }
+    });
+
+    // 添加策略建议
+    baseConfig.push({ key: '建议策略', label: '建议策略', className: 'col-strategy', headerStyle: 'min-width: 200px;' });
+
+    return baseConfig;
+}
+
 // 显示表格数据
-function displayTableData(data) {
+function displayTableData(data, fieldConfig) {
     const tableBody = document.getElementById('tableBody');
 
     let bodyHtml = '';
     data.forEach(row => {
         bodyHtml += '<tr>';
-        Object.values(row).forEach(value => {
-            const displayValue = typeof value === 'number' ?
-                value.toLocaleString(undefined, { maximumFractionDigits: 2 }) :
-                value;
-            bodyHtml += `<td>${displayValue || ''}</td>`;
+        fieldConfig.forEach(config => {
+            if (row.hasOwnProperty(config.key)) {
+                const value = row[config.key];
+                let displayValue = formatTableValue(value, config.format);
+                let cellClass = config.className || '';
+
+                // 为象限名称添加颜色样式
+                if (config.key === '象限名称') {
+                    const quadrantClass = getQuadrantClass(value);
+                    cellClass += ` ${quadrantClass}`;
+                }
+
+                bodyHtml += `<td class="${cellClass}">${displayValue || ''}</td>`;
+            }
         });
         bodyHtml += '</tr>';
     });
@@ -804,10 +1139,113 @@ function displayTableData(data) {
     tableBody.innerHTML = bodyHtml;
 }
 
+// 获取象限样式类
+function getQuadrantClass(quadrantName) {
+    const classMap = {
+        '明星产品': 'quadrant-star',
+        '金牛产品': 'quadrant-cash',
+        '潜力产品': 'quadrant-potential',
+        '瘦狗产品': 'quadrant-dog',
+        '核心客户': 'quadrant-star',
+        '增利客户': 'quadrant-cash',
+        '成长客户': 'quadrant-potential',
+        '机会客户': 'quadrant-dog',
+        '核心市场': 'quadrant-star',
+        '规模市场': 'quadrant-cash',
+        '机会市场': 'quadrant-potential',
+        '边缘市场': 'quadrant-dog'
+    };
+    return classMap[quadrantName] || '';
+}
+
+// 表格排序功能
+let currentSortField = null;
+let currentSortDirection = 'asc';
+
+function sortTable(fieldKey) {
+    const tableData = analysisResult.aggregated_data;
+    const fieldConfig = getTableFieldConfig();
+
+    // 切换排序方向
+    if (currentSortField === fieldKey) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortField = fieldKey;
+        currentSortDirection = 'desc'; // 数值字段默认降序
+    }
+
+    // 排序数据
+    const sortedData = [...tableData].sort((a, b) => {
+        let valueA = a[fieldKey];
+        let valueB = b[fieldKey];
+
+        // 处理数值类型
+        if (typeof valueA === 'number' && typeof valueB === 'number') {
+            return currentSortDirection === 'asc' ? valueA - valueB : valueB - valueA;
+        }
+
+        // 处理字符串类型
+        valueA = String(valueA || '').toLowerCase();
+        valueB = String(valueB || '').toLowerCase();
+
+        if (currentSortDirection === 'asc') {
+            return valueA.localeCompare(valueB);
+        } else {
+            return valueB.localeCompare(valueA);
+        }
+    });
+
+    // 更新表头排序图标
+    updateSortIcons(fieldKey, currentSortDirection);
+
+    // 重新显示数据
+    displayTableData(sortedData, fieldConfig);
+}
+
+function updateSortIcons(activeField, direction) {
+    const sortIcons = document.querySelectorAll('.sort-icon');
+    sortIcons.forEach(icon => {
+        icon.className = 'fas fa-sort sort-icon';
+    });
+
+    // 更新当前排序字段的图标
+    const activeHeader = document.querySelector(`th[onclick="sortTable('${activeField}')"] .sort-icon`);
+    if (activeHeader) {
+        activeHeader.className = direction === 'asc' ?
+            'fas fa-sort-up sort-icon active' :
+            'fas fa-sort-down sort-icon active';
+    }
+}
+
+// 格式化表格值
+function formatTableValue(value, format) {
+    if (value === null || value === undefined || value === '') {
+        return '-';
+    }
+
+    switch (format) {
+        case 'number':
+            return typeof value === 'number' ?
+                value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : value;
+        case 'integer':
+            return typeof value === 'number' ?
+                Math.round(value).toLocaleString() : value;
+        case 'currency':
+            return typeof value === 'number' ?
+                value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : value;
+        case 'percent':
+            return typeof value === 'number' ?
+                (value * 100).toFixed(2) + '%' : value;
+        default:
+            return value;
+    }
+}
+
 // 设置表格控件
 function setupTableControls(originalData) {
     const searchInput = document.getElementById('searchInput');
     const filterSelect = document.getElementById('filterSelect');
+    const fieldConfig = getTableFieldConfig();
 
     // 搜索功能
     searchInput.addEventListener('input', function() {
@@ -817,7 +1255,7 @@ function setupTableControls(originalData) {
                 String(value).toLowerCase().includes(searchTerm)
             );
         });
-        displayTableData(filteredData);
+        displayTableData(filteredData, fieldConfig);
     });
 
     // 筛选功能（按象限）
@@ -837,14 +1275,14 @@ function setupTableControls(originalData) {
         filterSelect.addEventListener('change', function() {
             const filterValue = this.value;
             if (!filterValue) {
-                displayTableData(originalData);
+                displayTableData(originalData, fieldConfig);
                 return;
             }
 
             const filteredData = originalData.filter(row =>
                 row.象限名称 === filterValue
             );
-            displayTableData(filteredData);
+            displayTableData(filteredData, fieldConfig);
         });
     }
 }
@@ -990,6 +1428,210 @@ window.addEventListener('resize', function() {
     clearTimeout(window.resizeTimeout);
     window.resizeTimeout = setTimeout(resizeCharts, 100);
 });
+
+// 显示成本分析图表
+function displayCostAnalysisCharts() {
+    const costAnalysis = analysisResult.additional_analysis.cost_analysis;
+
+    // 1. 成本构成饼图
+    if (costAnalysis.composition) {
+        displayCostCompositionChart(costAnalysis.composition);
+    }
+
+    // 2. 成本率分布图
+    if (costAnalysis.rate_distribution) {
+        displayCostRateChart(costAnalysis.rate_distribution);
+    }
+
+    // 3. 成本效率散点图
+    if (costAnalysis.efficiency && !costAnalysis.efficiency.error) {
+        displayCostEfficiencyChart(costAnalysis.efficiency);
+    }
+}
+
+// 成本构成饼图
+function displayCostCompositionChart(compositionData) {
+    const chartContainer = document.getElementById('costCompositionChart');
+    const chart = echarts.init(chartContainer);
+    chartInstances['costCompositionChart'] = chart;
+
+    const data = compositionData.composition_data.map(item => ({
+        name: item.name,
+        value: item.value
+    }));
+
+    const option = {
+        tooltip: {
+            trigger: 'item',
+            formatter: '{b}: {c}万元 ({d}%)'
+        },
+        series: [{
+            type: 'pie',
+            radius: '60%',
+            data: data,
+            itemStyle: {
+                borderRadius: 5,
+                borderColor: '#fff',
+                borderWidth: 2
+            },
+            label: {
+                formatter: '{b}\n{d}%'
+            },
+            emphasis: {
+                itemStyle: {
+                    shadowBlur: 10,
+                    shadowOffsetX: 0,
+                    shadowColor: 'rgba(0, 0, 0, 0.5)'
+                }
+            }
+        }]
+    };
+
+    chart.setOption(option);
+}
+
+// 成本率分布图
+function displayCostRateChart(rateData) {
+    const chartContainer = document.getElementById('costRateChart');
+    const chart = echarts.init(chartContainer);
+    chartInstances['costRateChart'] = chart;
+
+    const categories = rateData.distribution_data.map(item => item.interval);
+    const values = rateData.distribution_data.map(item => item.count);
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow'
+            },
+            formatter: function(params) {
+                const data = rateData.distribution_data[params[0].dataIndex];
+                return `${params[0].name}<br/>数量: ${data.count}<br/>占比: ${data.percentage}%`;
+            }
+        },
+        xAxis: {
+            type: 'category',
+            data: categories,
+            name: '成本率区间'
+        },
+        yAxis: {
+            type: 'value',
+            name: '数量'
+        },
+        series: [{
+            type: 'bar',
+            data: values,
+            itemStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#ffc107' },
+                    { offset: 1, color: '#fd7e14' }
+                ])
+            }
+        }]
+    };
+
+    chart.setOption(option);
+}
+
+// 成本效率散点图
+function displayCostEfficiencyChart(efficiencyData) {
+    const chartContainer = document.getElementById('costEfficiencyChart');
+    const chart = echarts.init(chartContainer);
+    chartInstances['costEfficiencyChart'] = chart;
+
+    const scatterData = efficiencyData.scatter_data.map(item => [
+        item.cost_rate,
+        item.efficiency_value,
+        item
+    ]);
+
+    const option = {
+        title: {
+            text: '成本效率分析',
+            left: 'center',
+            textStyle: {
+                fontSize: 14
+            }
+        },
+        tooltip: {
+            trigger: 'item',
+            formatter: function(params) {
+                const data = params.data[2];
+                return `${data.name}<br/>
+                        成本率: ${(data.cost_rate * 100).toFixed(2)}%<br/>
+                        ${efficiencyData.y_label}: ${data.efficiency_value.toFixed(2)}<br/>
+                        分类: ${getCostEfficiencyLabel(data.quadrant)}`;
+            }
+        },
+        xAxis: {
+            type: 'value',
+            name: efficiencyData.x_label,
+            nameLocation: 'middle',
+            nameGap: 30,
+            axisLabel: {
+                formatter: function(value) {
+                    return (value * 100).toFixed(0) + '%';
+                }
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: efficiencyData.y_label,
+            nameLocation: 'middle',
+            nameGap: 50
+        },
+        series: [{
+            type: 'scatter',
+            data: scatterData,
+            symbolSize: 8,
+            itemStyle: {
+                color: function(params) {
+                    const quadrant = params.data[2].quadrant;
+                    const colors = {
+                        'efficient': '#4CAF50',    // 绿色 - 高效
+                        'low_volume': '#2196F3',   // 蓝色 - 低量
+                        'high_cost': '#FF9800',    // 橙色 - 高成本
+                        'inefficient': '#F44336'   // 红色 - 低效
+                    };
+                    return colors[quadrant] || '#666';
+                }
+            },
+            markLine: {
+                silent: true,
+                symbol: 'none',
+                lineStyle: {
+                    color: '#999',
+                    type: 'dashed',
+                    width: 1
+                },
+                data: [
+                    {
+                        xAxis: efficiencyData.avg_cost_rate,
+                        name: '平均成本率'
+                    },
+                    {
+                        yAxis: efficiencyData.avg_efficiency,
+                        name: '平均效率'
+                    }
+                ]
+            }
+        }]
+    };
+
+    chart.setOption(option);
+}
+
+// 获取成本效率分类标签
+function getCostEfficiencyLabel(quadrant) {
+    const labels = {
+        'efficient': '高效率低成本',
+        'low_volume': '低效率低成本',
+        'high_cost': '高效率高成本',
+        'inefficient': '低效率高成本'
+    };
+    return labels[quadrant] || '未分类';
+}
 
 // 页面加载完成后的初始化
 document.addEventListener('DOMContentLoaded', function() {

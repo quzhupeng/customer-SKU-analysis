@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# Uploads and Exports
+uploads/
+exports/
+
+# IDE and OS generated files
+.DS_Store
+.vscode/

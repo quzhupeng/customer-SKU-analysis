@@ -74,18 +74,18 @@ def get_field_aliases() -> Dict[str, List[str]]:
         Dict[str, List[str]]: 字段别名映射
     """
     return {
-        'product': ['SKU', '物料名称', '产品名称', '存货名称', '物料', '单品', '产品', '商品', '货品', '品名', '物料编码', '产品编码', '商品名称', '货物名称', '品种'],
-        'customer': ['客户名称', '客户', '客户全称', '客户简称', '购买方', '买方', '采购方'],
-        'region': ['地区', '区域', '省份', '地域', '区域名称', '省市', '城市'],
-        'quantity': ['数量', '销量', '销售数量', '出货量', '发货量', '重量', '净重', '毛重', '吨数'],
-        'profit': ['毛利', '利润', '毛利润', '毛利额', '利润额', '盈利'],
-        'amount': ['金额', '销售额', '含税金额', '销售金额', '总金额', '成交金额', '交易金额'],
-        'cost': ['成本', '成本价', '采购成本', '进货成本'],
-        'sea_freight': ['海运费', '海运成本', '海运费用'],
-        'land_freight': ['陆运费', '陆运成本', '陆运费用', '运费', '运输费'],
-        'agency_fee': ['代办费', '代理费', '服务费'],
-        'unit_price': ['单价', '价格', '售价', '单位价格'],
-        'category': ['物料基本分类', '分类', '类别', '产品分类', '商品分类', '品类']
+        'product': ['SKU', '物料名称', '产品名称', '存货名称', '物料', '单品', '产品', '商品', '货品', '品名', '物料编码', '产品编码', '商品名称', '货物名称', '品种', '产品型号', '型号', '规格'],
+        'customer': ['客户名称', '客户', '客户全称', '客户简称', '购买方', '买方', '采购方', '客户代码', '客户编码', '客户ID', '买家', '收货方', '收货人', '终端客户', '最终客户'],
+        'region': ['地区', '区域', '省份', '地域', '区域名称', '省市', '城市', '省', '市', '地区名称', '销售区域', '配送区域'],
+        'quantity': ['数量', '销量', '销售数量', '出货量', '发货量', '重量', '净重', '毛重', '吨数', '件数', '箱数', '包装数量', '发货数量', '出库数量'],
+        'profit': ['毛利', '利润', '毛利润', '毛利额', '利润额', '盈利', '毛利金额', '利润金额', '毛利贡献', '利润贡献'],
+        'amount': ['金额', '销售额', '含税金额', '销售金额', '总金额', '成交金额', '交易金额', '订单金额', '合同金额', '开票金额', '收入', '营业额'],
+        'cost': ['成本', '成本价', '采购成本', '进货成本', '单位成本', '总成本', '成本金额'],
+        'sea_freight': ['海运费', '海运成本', '海运费用', '海运运费'],
+        'land_freight': ['陆运费', '陆运成本', '陆运费用', '运费', '运输费', '物流费', '配送费'],
+        'agency_fee': ['代办费', '代理费', '服务费', '手续费', '佣金'],
+        'unit_price': ['单价', '价格', '售价', '单位价格', '含税单价', '不含税单价'],
+        'category': ['物料基本分类', '分类', '类别', '产品分类', '商品分类', '品类', '产品类型', '商品类型']
     }
 
 def detect_field_type(column_name: str) -> str:
@@ -113,19 +113,37 @@ def detect_field_type(column_name: str) -> str:
             if alias in cleaned_name or cleaned_name in alias:
                 return field_type
 
-    # 特殊处理一些常见的变体
+    # 特殊处理一些常见的变体和关键字
     special_patterns = {
-        'product': ['品', '料', 'sku', 'SKU'],
-        'customer': ['客', '户'],
-        'region': ['地', '区', '省'],
-        'quantity': ['量', '重', '吨'],
-        'profit': ['利', '润'],
-        'amount': ['额', '金']
+        'product': ['品', '料', 'sku', 'SKU', '物料', '产品', '商品', '货品'],
+        'customer': ['客', '户', '买', '购', '收货'],
+        'region': ['地', '区', '省', '市', '域'],
+        'quantity': ['量', '数', '重', '吨', '件', '箱'],
+        'profit': ['利', '润', '盈'],
+        'amount': ['额', '金', '收入', '营业'],
+        'cost': ['本', '价', '成本'],
+        'unit_price': ['价', '单价', '价格']
     }
 
+    # 更灵活的模糊匹配
     for field_type, patterns in special_patterns.items():
         for pattern in patterns:
             if pattern in cleaned_name:
+                return field_type
+
+    # 最后尝试更宽松的匹配
+    loose_patterns = {
+        'customer': ['客户', '买方', '购买', '收货'],
+        'product': ['产品', '商品', '物料', '货品'],
+        'region': ['地区', '区域', '省份'],
+        'amount': ['金额', '销售', '收入'],
+        'quantity': ['数量', '销量', '重量'],
+        'profit': ['毛利', '利润']
+    }
+
+    for field_type, patterns in loose_patterns.items():
+        for pattern in patterns:
+            if pattern in cleaned_name or any(p in cleaned_name for p in pattern):
                 return field_type
 
     return 'unknown'
@@ -133,27 +151,36 @@ def detect_field_type(column_name: str) -> str:
 def validate_required_fields(detected_fields: Dict[str, str], analysis_type: str) -> List[str]:
     """
     验证必需字段是否存在
-    
+
     Args:
         detected_fields: 检测到的字段映射
         analysis_type: 分析类型 ('product', 'customer', 'region')
-        
+
     Returns:
         List[str]: 缺失的必需字段列表
     """
-    required_fields = {
-        'product': ['product', 'quantity', 'profit'],  # 产品分析：需要产品名、数量、毛利
-        'customer': ['customer', 'amount', 'profit'],   # 客户分析：需要客户名、金额、毛利
-        'region': ['region', 'amount', 'profit']        # 地区分析：需要地区名、金额、毛利
+    # 更灵活的字段要求：只需要核心字段和至少一个数值字段
+    core_fields = {
+        'product': 'product',    # 产品分析：需要产品名
+        'customer': 'customer',  # 客户分析：需要客户名
+        'region': 'region'       # 地区分析：需要地区名
     }
-    
+
+    # 数值字段：至少需要其中一个
+    value_fields = ['quantity', 'profit', 'amount']
+
     missing_fields = []
-    required = required_fields.get(analysis_type, [])
-    
-    for field in required:
-        if field not in detected_fields or not detected_fields[field]:
-            missing_fields.append(field)
-    
+
+    # 检查核心字段
+    core_field = core_fields.get(analysis_type)
+    if core_field and (core_field not in detected_fields or not detected_fields[core_field]):
+        missing_fields.append(core_field)
+
+    # 检查是否有至少一个数值字段
+    has_value_field = any(field in detected_fields and detected_fields[field] for field in value_fields)
+    if not has_value_field:
+        missing_fields.extend([field for field in value_fields if field not in detected_fields])
+
     return missing_fields
 
 def get_unit_options() -> Dict[str, List[Dict[str, Any]]]:
@@ -222,25 +249,25 @@ def format_number(value: float, decimal_places: int = 2) -> str:
 
 def calculate_quadrant(x_value: float, y_value: float, x_avg: float, y_avg: float) -> int:
     """
-    计算象限位置
-    
+    计算象限位置（按标准笛卡尔坐标系逆时针编号）
+
     Args:
         x_value: X轴值
         y_value: Y轴值
         x_avg: X轴平均值
         y_avg: Y轴平均值
-        
+
     Returns:
         int: 象限编号 (1-4)
     """
     if x_value >= x_avg and y_value >= y_avg:
-        return 1  # 第一象限：高X，高Y
+        return 1  # 第一象限：高X，高Y (明星产品)
     elif x_value < x_avg and y_value >= y_avg:
-        return 3  # 第三象限：低X，高Y
+        return 2  # 第二象限：低X，高Y (潜力产品)
     elif x_value < x_avg and y_value < y_avg:
-        return 4  # 第四象限：低X，低Y
+        return 3  # 第三象限：低X，低Y (瘦狗产品)
     else:
-        return 2  # 第二象限：高X，低Y
+        return 4  # 第四象限：高X，低Y (金牛产品)
 
 def get_quadrant_info(analysis_type: str) -> Dict[int, Dict[str, str]]:
     """
@@ -260,19 +287,19 @@ def get_quadrant_info(analysis_type: str) -> Dict[int, Dict[str, str]]:
                 'strategy': '重点保护与投入，保证产能、优先备货、加大营销'
             },
             2: {
-                'name': '金牛产品',
-                'description': '低毛利, 高销量',
-                'strategy': '优化成本与关联销售，审视生产流程，利用其流量'
-            },
-            3: {
                 'name': '潜力产品',
                 'description': '高毛利, 低销量',
                 'strategy': '精准营销与试错，分析销量低的原因'
             },
-            4: {
+            3: {
                 'name': '瘦狗产品',
                 'description': '低毛利, 低销量',
                 'strategy': '简化或淘汰，评估战略保留价值'
+            },
+            4: {
+                'name': '金牛产品',
+                'description': '低毛利, 高销量',
+                'strategy': '优化成本与关联销售，审视生产流程，利用其流量'
             }
         },
         'customer': {
@@ -282,19 +309,19 @@ def get_quadrant_info(analysis_type: str) -> Dict[int, Dict[str, str]]:
                 'strategy': '战略合作，VIP服务，高层互访，建立长期护城河'
             },
             2: {
-                'name': '增利客户',
-                'description': '高金额, 低毛利',
-                'strategy': '提升利润，引导采购高利润产品，审视折扣'
-            },
-            3: {
                 'name': '成长客户',
                 'description': '低金额, 高毛利',
                 'strategy': '扶持与渗透，销售重点跟进，增加其采购份额和频次'
             },
-            4: {
+            3: {
                 'name': '机会客户',
                 'description': '低金额, 低毛利',
                 'strategy': '标准化服务，降低服务成本，不投入过多资源'
+            },
+            4: {
+                'name': '增利客户',
+                'description': '高金额, 低毛利',
+                'strategy': '提升利润，引导采购高利润产品，审视折扣'
             }
         },
         'region': {
@@ -304,19 +331,19 @@ def get_quadrant_info(analysis_type: str) -> Dict[int, Dict[str, str]]:
                 'strategy': '重点投入资源，建立区域壁垒，可作为新产品首发试点'
             },
             2: {
-                'name': '规模市场',
-                'description': '高金额, 低毛利',
-                'strategy': '优化物流和渠道成本，引导销售高毛利产品组合'
-            },
-            3: {
                 'name': '机会市场',
                 'description': '低金额, 高毛利',
                 'strategy': '精准定位高价值客户，加强市场渗透'
             },
-            4: {
+            3: {
                 'name': '边缘市场',
                 'description': '低金额, 低毛利',
                 'strategy': '维持最低成本运营，标准化服务，定期复评'
+            },
+            4: {
+                'name': '规模市场',
+                'description': '高金额, 低毛利',
+                'strategy': '优化物流和渠道成本，引导销售高毛利产品组合'
             }
         }
     }
