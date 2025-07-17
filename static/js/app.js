@@ -6,6 +6,11 @@ let currentParetoDimension = null;
 let availableParetoDimensions = [];
 let analysisResult = null;
 let chartInstances = {}; // 存储图表实例
+let resizeHandler = null; // 存储resize处理函数
+
+// 布局分析工具变量
+let layoutAnalysisEnabled = false;
+let layoutDebugMode = false;
 
 // DOM元素
 const fileInput = document.getElementById('fileInput');
@@ -50,6 +55,9 @@ function initializeEventListeners() {
     // 导出和新建分析
     document.getElementById('exportReport').addEventListener('click', handleExportReport);
     document.getElementById('newAnalysis').addEventListener('click', handleNewAnalysis);
+    
+    // 布局分析工具初始化
+    initializeLayoutAnalysisTools();
 }
 
 // 文件选择处理
@@ -445,14 +453,23 @@ async function handleParetoDimensionChange(event) {
     const newDimension = event.target.value;
     if (newDimension === currentParetoDimension) return;
 
+    const selector = event.target;
+    const oldDimension = currentParetoDimension;
     currentParetoDimension = newDimension;
 
-    showLoading('重新分析帕累托数据...');
+    // 禁用选择器，防止重复操作
+    selector.disabled = true;
+
+    // 获取维度信息用于显示
+    const dimensionInfo = availableParetoDimensions.find(d => d.value === newDimension);
+    const dimensionLabel = dimensionInfo ? `${dimensionInfo.name}(${dimensionInfo.unit})` : newDimension;
+
+    showLoading(`正在切换到${dimensionLabel}分析...`);
 
     try {
         // 重新进行分析
-        const quantityUnit = document.querySelector('input[name="quantityUnit"]:checked').value;
-        const amountUnit = document.querySelector('input[name="amountUnit"]:checked').value;
+        const quantityUnit = document.querySelector('input[name="quantityUnit"]:checked')?.value || 'tons';
+        const amountUnit = document.querySelector('input[name="amountUnit"]:checked')?.value || 'wan_yuan';
 
         const unitConfirmations = {
             quantity: quantityUnit,
@@ -480,13 +497,21 @@ async function handleParetoDimensionChange(event) {
             // 只更新帕累托图表
             displayParetoChart();
             hideLoading();
-            showMessage('帕累托分析已更新', 'success');
+            showMessage(`已切换到${dimensionLabel}分析`, 'success');
         } else {
             throw new Error(result.error);
         }
     } catch (error) {
+        // 恢复原来的维度选择
+        currentParetoDimension = oldDimension;
+        selector.value = oldDimension;
+
         hideLoading();
-        showMessage('更新帕累托分析失败: ' + error.message, 'error');
+        showMessage(`切换到${dimensionLabel}分析失败: ${error.message}`, 'error');
+        console.error('帕累托维度切换失败:', error);
+    } finally {
+        // 重新启用选择器
+        selector.disabled = false;
     }
 }
 
@@ -507,13 +532,21 @@ function displayAnalysisResults() {
     displayDataTable();
 
     // 确保图表正确显示
-    setTimeout(resizeCharts, 300);
+    // 使用 requestAnimationFrame 和 setTimeout 的组合确保图表渲染完成
+    requestAnimationFrame(() => {
+        setTimeout(resizeCharts, 100);
+    });
 }
 
 // 显示四象限分析
 function displayQuadrantAnalysis() {
     const quadrantData = analysisResult.quadrant_analysis;
     const chartContainer = document.getElementById('quadrantChart');
+    
+    // 确保容器有正确的高度
+    if (!chartContainer.style.height) {
+        chartContainer.style.height = '400px';
+    }
 
     console.log('displayQuadrantAnalysis 调试信息:');
     console.log('- 四象限数据点数量:', quadrantData.scatter_data.length);
@@ -858,7 +891,6 @@ function displayAdditionalCharts() {
     displayParetoChart();
     displayDistributionChart();
     displayProfitLossChart();
-    displayContributionChart();
 
     // 显示成本分析图表（如果有成本数据）
     if (analysisResult.additional_analysis.cost_analysis) {
@@ -867,19 +899,145 @@ function displayAdditionalCharts() {
     } else {
         document.getElementById('costAnalysisSection').style.display = 'none';
     }
+
+    // 确保 ResizeObserver 正确初始化
+    // 使用 requestAnimationFrame 确保 DOM 完全渲染后再设置观察器
+    requestAnimationFrame(() => {
+        setupResizeObserver();
+    });
 }
 
-// 帕累托图
+// 增强版帕累托图（整合条形图和累计贡献度折线图）
 function displayParetoChart() {
     const paretoData = analysisResult.additional_analysis.pareto_analysis;
     const chartContainer = document.getElementById('paretoChart');
 
-    const chart = echarts.init(chartContainer);
-    chartInstances['paretoChart'] = chart;
+    if (!chartContainer) {
+        console.error('Pareto chart container not found');
+        return;
+    }
 
-    const data = paretoData.pareto_data.slice(0, 20); // 只显示前20项
+    // 添加加载状态
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'chart-loading';
+    loadingDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在加载图表...';
+    loadingDiv.style.cssText = 'position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10; color: #666;';
+    chartContainer.style.position = 'relative';
+    chartContainer.appendChild(loadingDiv);
+
+    // 验证容器尺寸
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryDelay = 100;
+
+    function initializeChart() {
+        try {
+            // 获取容器的实际尺寸
+            const rect = chartContainer.getBoundingClientRect();
+            const containerWidth = rect.width;
+            const containerHeight = rect.height;
+
+            // 如果容器尺寸为零，设置显式尺寸或重试
+            if (containerWidth === 0 || containerHeight === 0) {
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    console.warn(`Pareto chart container has zero dimensions, retrying... (${retryCount}/${maxRetries})`);
+                    
+                    // 尝试设置显式尺寸
+                    if (!chartContainer.style.width) {
+                        chartContainer.style.width = '100%';
+                    }
+                    if (!chartContainer.style.height) {
+                        chartContainer.style.height = '400px';
+                    }
+                    
+                    // 强制重新布局
+                    chartContainer.offsetHeight;
+                    
+                    // 延迟重试
+                    setTimeout(initializeChart, retryDelay);
+                    return;
+                }
+                
+                // 达到最大重试次数，使用默认尺寸
+                console.error('Failed to get valid container dimensions, using defaults');
+                chartContainer.style.width = '100%';
+                chartContainer.style.height = '400px';
+            }
+
+            // 获取或创建图表实例
+            let chart = chartInstances['paretoChart'];
+            if (!chart || chart.isDisposed()) {
+                try {
+                    chart = echarts.init(chartContainer);
+                    chartInstances['paretoChart'] = chart;
+                } catch (initError) {
+                    console.error('Failed to initialize Pareto chart:', initError);
+                    // 移除加载状态
+                    if (loadingDiv && loadingDiv.parentNode) {
+                        loadingDiv.parentNode.removeChild(loadingDiv);
+                    }
+                    showMessage('帕累托图初始化失败，请刷新页面重试', 'error');
+                    return;
+                }
+            } else {
+                // 清除现有配置，确保完全重新渲染
+                chart.clear();
+            }
+
+            // 移除加载状态
+            if (loadingDiv && loadingDiv.parentNode) {
+                loadingDiv.parentNode.removeChild(loadingDiv);
+            }
+
+            // 继续执行图表配置
+            configureAndRenderChart(chart, paretoData);
+
+        } catch (error) {
+            console.error('Error in displayParetoChart:', error);
+            // 移除加载状态
+            if (loadingDiv && loadingDiv.parentNode) {
+                loadingDiv.parentNode.removeChild(loadingDiv);
+            }
+            showMessage('帕累托图显示失败: ' + error.message, 'error');
+        }
+    }
+
+    // 使用 requestAnimationFrame 确保 DOM 已更新
+    requestAnimationFrame(initializeChart);
+}
+
+// 配置并渲染帕累托图
+function configureAndRenderChart(chart, paretoData) {
+
+    // 根据屏幕尺寸调整显示项目数量
+    const maxItems = window.innerWidth < 480 ? 10 : (window.innerWidth < 768 ? 15 : 20);
+    const data = paretoData.pareto_data.slice(0, maxItems);
     const categories = data.map(item => item[getGroupFieldName()]);
-    const values = data.map(item => item.累计占比);
+    const cumulativeValues = data.map(item => item.累计占比);
+
+    // 获取排序字段和独立贡献值
+    const sortField = paretoData.dimension || 'profit';
+    const sortColumn = getSortColumnName(sortField);
+    let individualValues = data.map(item => item[sortColumn]);
+
+    // 数据验证和清理
+    individualValues = individualValues.map(value => {
+        const numValue = parseFloat(value);
+        return isNaN(numValue) ? 0 : numValue;
+    });
+
+    // 添加调试信息
+    console.log('configureAndRenderChart调试:', {
+        sortField,
+        sortColumn,
+        paretoData,
+        dataKeys: data.length > 0 ? Object.keys(data[0]) : [],
+        rawValues: data.slice(0, 3).map(item => item[sortColumn]),
+        cleanedValues: individualValues.slice(0, 3),
+        hasValidValues: individualValues.some(v => v > 0),
+        totalValidValues: individualValues.filter(v => v > 0).length
+    });
 
     // 获取维度信息用于显示
     const dimensionInfo = paretoData.dimension_info || { name: '数值', unit: '' };
@@ -889,10 +1047,19 @@ function displayParetoChart() {
         title: {
             text: `帕累托分析 - ${dimensionLabel}`,
             left: 'center',
+            top: 10,
             textStyle: {
-                fontSize: 14,
+                fontSize: 18,
+                fontWeight: 'bold',
                 color: '#333'
             }
+        },
+        grid: {
+            left: '5%',
+            right: '5%',
+            top: '12%',
+            bottom: '12%',
+            containLabel: true
         },
         tooltip: {
             trigger: 'axis',
@@ -900,69 +1067,312 @@ function displayParetoChart() {
                 type: 'cross'
             },
             formatter: function(params) {
-                const point = params[0];
-                const itemData = data[point.dataIndex];
+                const dataIndex = params[0].dataIndex;
+                const itemData = data[dataIndex];
                 const fieldName = getGroupFieldName();
-                const sortField = paretoData.dimension || 'profit';
-                const sortColumn = getSortColumnName(sortField);
+
+                // 计算个体贡献度百分比
+                const totalValue = paretoData.pareto_data.reduce((sum, item) => sum + item[sortColumn], 0);
+                const individualContribution = ((itemData[sortColumn] / totalValue) * 100).toFixed(1);
 
                 return `
-                    <div style="text-align: left;">
-                        <strong>${point.name}</strong><br/>
-                        累计占比: ${point.value}%<br/>
-                        ${dimensionLabel}: ${formatNumber(itemData[sortColumn])}
+                    <div style="text-align: left; font-size: 13px;">
+                        <strong style="color: #333; font-size: 14px;">${itemData[fieldName]}</strong><br/>
+                        <span style="color: #667eea;">● ${dimensionLabel}: ${formatNumber(itemData[sortColumn])}</span><br/>
+                        <span style="color: #667eea;">● 个体贡献: ${individualContribution}%</span><br/>
+                        <span style="color: #ff6b6b;">● 累计占比: ${itemData.累计占比}%</span>
                     </div>
                 `;
+            }
+        },
+        legend: {
+            data: ['个体贡献', '累计占比'],
+            top: 40,
+            right: 'center',
+            textStyle: {
+                fontSize: 13
             }
         },
         xAxis: {
             type: 'category',
             data: categories,
             axisLabel: {
-                rotate: 45,
-                interval: 0
-            }
-        },
-        yAxis: {
-            type: 'value',
-            name: '累计占比(%)',
-            max: 100
-        },
-        series: [{
-            type: 'line',
-            data: values,
-            smooth: true,
-            lineStyle: {
-                color: '#667eea',
-                width: 3
-            },
-            itemStyle: {
-                color: '#667eea'
-            },
-            markLine: {
-                data: [{
-                    yAxis: 80,
-                    name: '80%线',
-                    lineStyle: {
-                        color: '#ff4444',
-                        type: 'dashed'
+                rotate: window.innerWidth < 768 ? 90 : 45,
+                interval: 0,
+                fontSize: window.innerWidth < 480 ? 10 : 11,
+                formatter: function(value) {
+                    // 在小屏幕上截断长标签
+                    if (window.innerWidth < 480 && value.length > 8) {
+                        return value.substring(0, 8) + '...';
                     }
-                }]
+                    return value;
+                }
             }
-        }]
+        },
+        yAxis: [
+            {
+                type: 'value',
+                name: `${dimensionLabel}`,
+                position: 'left',
+                axisLabel: {
+                    formatter: function(value) {
+                        return formatNumber(value);
+                    }
+                }
+            },
+            {
+                type: 'value',
+                name: '累计占比(%)',
+                position: 'right',
+                max: 100,
+                axisLabel: {
+                    formatter: '{value}%'
+                }
+            }
+        ],
+        series: [
+            {
+                name: '个体贡献',
+                type: 'bar',
+                yAxisIndex: 0,
+                data: individualValues,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#667eea' },
+                        { offset: 1, color: '#764ba2' }
+                    ])
+                },
+                barWidth: '70%'
+            },
+            {
+                name: '累计占比',
+                type: 'line',
+                yAxisIndex: 1,
+                data: cumulativeValues,
+                smooth: true,
+                lineStyle: {
+                    color: '#ff6b6b',
+                    width: 4
+                },
+                itemStyle: {
+                    color: '#ff6b6b',
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                },
+                symbolSize: 8,
+                markLine: {
+                    data: [{
+                        yAxis: 80,
+                        name: '80%线',
+                        lineStyle: {
+                            color: '#ff4444',
+                            type: 'dashed',
+                            width: 2
+                        },
+                        label: {
+                            formatter: '80/20分界线'
+                        }
+                    }]
+                }
+            }
+        ]
     };
 
-    chart.setOption(option);
+    // 使用错误处理设置图表选项
+    try {
+        chart.setOption(option);
+        
+            // 添加窗口尺寸变化监听（使用防抖）
+            if (!chart._resizeHandler) {
+                chart._resizeHandler = debounce(() => {
+                    const container = chart.getDom();
+                    if (container) {
+                        const rect = container.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            chart.resize();
+                        }
+                    }
+                }, RESIZE_DEBOUNCE_DELAY);
+                window.addEventListener('resize', chart._resizeHandler);
+            }
+        
+        // 显示帕累托统计信息
+        displayParetoStats(paretoData, data, dimensionLabel);
+    } catch (error) {
+        console.error('Failed to set Pareto chart options:', error);
+        showMessage('帕累托图渲染失败: ' + error.message, 'error');
+    }
+}
+
+// 显示帕累托统计信息
+function displayParetoStats(paretoData, displayData, dimensionLabel) {
+    const statsContainer = document.getElementById('paretoStats');
+    if (!statsContainer) {
+        console.warn('帕累托统计信息容器未找到');
+        return;
+    }
+
+    // 添加全面的调试信息
+    console.log('=== displayParetoStats 完整调试信息 ===');
+    console.log('paretoData:', paretoData);
+    console.log('displayData:', displayData);
+    console.log('dimensionLabel:', dimensionLabel);
+    console.log('currentAnalysisType:', currentAnalysisType);
+    console.log('analysisResult.field_detection:', analysisResult?.field_detection);
+    console.log('==========================================');
+
+    try {
+        // 安全获取数据
+        const coreItemsCount = paretoData.core_items_count || 0;
+        const totalItems = paretoData.total_items || displayData.length;
+        const coreItemsPercentage = paretoData.core_items_percentage || 0;
+
+        // 计算核心项目的总贡献值
+        const sortField = paretoData.dimension || 'profit';
+        const sortColumn = getSortColumnName(sortField);
+        const coreItems = paretoData.core_items || [];
+
+        // 添加调试信息
+        console.log('displayParetoStats调试:', {
+            sortField,
+            sortColumn,
+            paretoDataKeys: paretoData.pareto_data && paretoData.pareto_data.length > 0 ? Object.keys(paretoData.pareto_data[0]) : [],
+            coreItemsKeys: coreItems.length > 0 ? Object.keys(coreItems[0]) : [],
+            firstItemValues: paretoData.pareto_data && paretoData.pareto_data.length > 0 ? paretoData.pareto_data[0] : null
+        });
+
+        // 安全计算总值和核心值
+        const totalValue = paretoData.pareto_data ?
+            paretoData.pareto_data.reduce((sum, item) => sum + (parseFloat(item[sortColumn]) || 0), 0) : 0;
+        const coreValue = coreItems.length > 0 ?
+            coreItems.reduce((sum, item) => sum + (parseFloat(item[sortColumn]) || 0), 0) : 0;
+        const coreValuePercentage = totalValue > 0 ? ((coreValue / totalValue) * 100).toFixed(1) : '0.0';
+
+        // 找到80%分界点的项目
+        const paretoIndex = paretoData.pareto_data ?
+            paretoData.pareto_data.findIndex(item => (item.累计占比 || 0) >= 80) : -1;
+        const paretoItemName = paretoIndex >= 0 ?
+            paretoData.pareto_data[paretoIndex][getGroupFieldName()] || '未知' : '未知';
+
+        console.log('帕累托统计数据:', {
+            coreItemsCount,
+            totalItems,
+            coreItemsPercentage,
+            coreValue,
+            coreValuePercentage,
+            paretoIndex,
+            paretoItemName
+        });
+
+        // 生成优化后的HTML布局
+        const html = `
+            <div class="pareto-stats-optimized">
+                <!-- 主要KPI指标 - 突出显示 -->
+                <div class="primary-kpi-section">
+                    <div class="kpi-highlight-card">
+                        <div class="kpi-main-content">
+                            <div class="kpi-primary-number">${formatNumber(coreValue)}</div>
+                            <div class="kpi-primary-label">核心项目总值</div>
+                            <div class="kpi-unit-text">${dimensionLabel}</div>
+                        </div>
+                        <div class="kpi-secondary-content">
+                            <div class="kpi-percentage">${coreValuePercentage}%</div>
+                            <div class="kpi-percentage-label">贡献占比</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 详细统计信息 - 紧凑布局 -->
+                <div class="detailed-stats-section">
+                    <!-- 项目数量统计 -->
+                    <div class="stats-group">
+                        <div class="group-header">
+                            <span class="group-icon">📊</span>
+                            <span class="group-title">项目统计</span>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-item primary">
+                                <div class="stat-number">${coreItemsCount}</div>
+                                <div class="stat-label">核心项目</div>
+                                <div class="stat-sublabel">${coreItemsPercentage.toFixed(1)}% 占比</div>
+                            </div>
+                            <div class="stat-item secondary">
+                                <div class="stat-number">${totalItems}</div>
+                                <div class="stat-label">总项目数</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 80/20分界信息 -->
+                    <div class="stats-group">
+                        <div class="group-header">
+                            <span class="group-icon">🎯</span>
+                            <span class="group-title">80/20 分界</span>
+                        </div>
+                        <div class="boundary-info">
+                            <div class="boundary-position">
+                                <span class="position-number">${paretoIndex >= 0 ? paretoIndex + 1 : '-'}</span>
+                                <span class="position-label">分界位置</span>
+                            </div>
+                            <div class="boundary-item">
+                                <div class="item-name" title="${paretoItemName}">
+                                    ${paretoItemName.length > 12 ? paretoItemName.substring(0, 12) + '...' : paretoItemName}
+                                </div>
+                                <div class="item-label">分界项目</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        statsContainer.innerHTML = html;
+
+    } catch (error) {
+        console.error('显示帕累托统计信息时出错:', error);
+        statsContainer.innerHTML = `
+            <div class="pareto-stats-error">
+                <p>统计信息加载失败，请刷新页面重试</p>
+            </div>
+        `;
+    }
 }
 
 // 获取排序字段的列名
 function getSortColumnName(sortField) {
+    // 使用后端返回的实际字段映射，而不是硬编码的中文名称
+    if (analysisResult && analysisResult.field_detection && analysisResult.field_detection.detected_fields) {
+        const detectedFields = analysisResult.field_detection.detected_fields;
+        const actualFieldName = detectedFields[sortField];
+
+        if (actualFieldName) {
+            console.log('getSortColumnName调试:', {
+                sortField,
+                actualFieldName,
+                detectedFields
+            });
+            return actualFieldName;
+        }
+    }
+
+    // 如果没有找到实际字段名，使用备用逻辑
     const fieldMapping = {
         'profit': getFieldName('profit'),
         'amount': getFieldName('amount'),
         'quantity': getFieldName('quantity')
     };
-    return fieldMapping[sortField] || sortField;
+
+    const result = fieldMapping[sortField] || sortField;
+
+    console.log('getSortColumnName备用逻辑:', {
+        sortField,
+        currentAnalysisType,
+        fieldMapping,
+        result,
+        detectedFields: analysisResult?.field_detection?.detected_fields
+    });
+
+    return result;
 }
 
 // 获取字段名称
@@ -1005,6 +1415,11 @@ function formatNumber(value) {
 function displayDistributionChart() {
     const distributionData = analysisResult.additional_analysis.distribution_analysis;
     const chartContainer = document.getElementById('distributionChart');
+    
+    // 确保容器有正确的高度
+    if (!chartContainer.style.height) {
+        chartContainer.style.height = '400px';
+    }
 
     const chart = echarts.init(chartContainer);
     chartInstances['distributionChart'] = chart;
@@ -1065,10 +1480,10 @@ function displayDistributionChart() {
             }
         },
         grid: {
-            left: '15%',
+            left: '10%',
             right: '4%',
-            bottom: '15%',
-            top: '15%',
+            bottom: '12%',
+            top: '12%',
             containLabel: true
         },
         xAxis: {
@@ -1295,6 +1710,11 @@ function sortIntervalTable(headerElement, sortField) {
 function displayProfitLossChart() {
     const profitLossData = analysisResult.additional_analysis.profit_loss_analysis;
     const chartContainer = document.getElementById('profitLossChart');
+    
+    // 确保容器有正确的高度
+    if (!chartContainer.style.height) {
+        chartContainer.style.height = '400px';
+    }
 
     const chart = echarts.init(chartContainer);
     chartInstances['profitLossChart'] = chart;
@@ -1800,55 +2220,7 @@ function hideFilterNotification() {
     }
 }
 
-// 贡献度分析图
-function displayContributionChart() {
-    const contributionData = analysisResult.additional_analysis.contribution_analysis;
-    const chartContainer = document.getElementById('contributionChart');
 
-    const chart = echarts.init(chartContainer);
-    chartInstances['contributionChart'] = chart;
-
-    // 选择第一个可用的字段进行展示
-    const firstField = Object.keys(contributionData)[0];
-    if (!firstField) return;
-
-    const data = contributionData[firstField].top_contributors.slice(0, 10);
-    const categories = data.map(item => item[getGroupFieldName()]);
-    const values = data.map(item => item[`${firstField}_contribution`]);
-
-    const option = {
-        tooltip: {
-            trigger: 'axis',
-            axisPointer: {
-                type: 'shadow'
-            }
-        },
-        xAxis: {
-            type: 'category',
-            data: categories,
-            axisLabel: {
-                rotate: 45,
-                interval: 0
-            }
-        },
-        yAxis: {
-            type: 'value',
-            name: '贡献度(%)'
-        },
-        series: [{
-            type: 'bar',
-            data: values,
-            itemStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: '#667eea' },
-                    { offset: 1, color: '#764ba2' }
-                ])
-            }
-        }]
-    };
-
-    chart.setOption(option);
-}
 
 // 显示数据表格
 function displayDataTable() {
@@ -2173,6 +2545,9 @@ async function handleExportReport() {
 
 // 新建分析
 function handleNewAnalysis() {
+    // 清理图表和观察器
+    cleanupCharts();
+    
     // 重置所有状态
     currentFileId = null;
     currentSheetName = null;
@@ -2241,20 +2616,143 @@ function getMessageIcon(type) {
     return icons[type] || 'info-circle';
 }
 
-// 响应式图表处理
-function resizeCharts() {
-    Object.values(chartInstances).forEach(chart => {
-        if (chart && typeof chart.resize === 'function') {
-            chart.resize();
+// 全局 ResizeObserver 实例和防抖处理
+let globalResizeObserver = null;
+let globalResizeDebounceTimer = null;
+const RESIZE_DEBOUNCE_DELAY = 250; // 统一的防抖延迟时间 (250ms)
+
+// 通用防抖函数
+function debounce(func, delay) {
+    let timeoutId;
+    return function(...args) {
+        // 清除之前的定时器
+        clearTimeout(timeoutId);
+        // 设置新的定时器
+        timeoutId = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
+
+// 创建一个全局的 ResizeObserver 来管理所有图表
+function setupResizeObserver() {
+    // 清理现有的观察器
+    cleanupResizeObserver();
+
+    // 创建防抖处理函数
+    const debouncedResize = debounce((entries) => {
+        handleChartResize(entries);
+    }, RESIZE_DEBOUNCE_DELAY);
+
+    // 创建单个全局 ResizeObserver
+    globalResizeObserver = new ResizeObserver(debouncedResize);
+
+    // 观察所有图表容器
+    observeChartContainers();
+}
+
+// 处理图表 resize 事件
+function handleChartResize(entries) {
+    const resizedContainers = new Set();
+    
+    // 收集所有需要调整大小的容器
+    entries.forEach(entry => {
+        const rect = entry.contentRect;
+        if (rect.width > 0 && rect.height > 0) {
+            resizedContainers.add(entry.target.id);
+        }
+    });
+
+    // 批量处理所有需要调整的图表
+    resizedContainers.forEach(containerId => {
+        const chart = chartInstances[containerId];
+        if (chart && typeof chart.resize === 'function' && !chart.isDisposed()) {
+            try {
+                chart.resize();
+            } catch (e) {
+                console.error(`Error resizing chart ${containerId}:`, e);
+            }
         }
     });
 }
 
-// 窗口大小变化时重新调整图表大小
-window.addEventListener('resize', function() {
-    clearTimeout(window.resizeTimeout);
-    window.resizeTimeout = setTimeout(resizeCharts, 100);
-});
+// 观察图表容器
+function observeChartContainers() {
+    const chartContainers = [
+        'quadrantChart',
+        'paretoChart',
+        'distributionChart',
+        'profitLossChart',
+        'costCompositionChart',
+        'costRateChart',
+        'costEfficiencyChart'
+    ];
+
+    chartContainers.forEach(containerId => {
+        const container = document.getElementById(containerId);
+        // 添加 null 检查
+        if (container && globalResizeObserver) {
+            globalResizeObserver.observe(container);
+        }
+    });
+}
+
+// 清理 ResizeObserver
+function cleanupResizeObserver() {
+    // 清理防抖计时器
+    if (globalResizeDebounceTimer) {
+        clearTimeout(globalResizeDebounceTimer);
+        globalResizeDebounceTimer = null;
+    }
+
+    // 断开并清理观察器
+    if (globalResizeObserver) {
+        globalResizeObserver.disconnect();
+        globalResizeObserver = null;
+    }
+}
+
+// 响应式图表处理 - 手动调用所有图表的 resize 方法
+function resizeCharts() {
+    Object.entries(chartInstances).forEach(([name, chart]) => {
+        if (chart && typeof chart.resize === 'function' && !chart.isDisposed()) {
+            try {
+                const container = chart.getDom();
+                if (container) {
+                    const rect = container.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        chart.resize();
+                    }
+                }
+            } catch (e) {
+                console.error(`Error resizing chart ${name}:`, e);
+            }
+        }
+    });
+}
+
+// 设置全局响应式处理 - 作为 ResizeObserver 的备用方案
+function setupGlobalResizeHandler() {
+    // 移除旧的处理函数
+    if (resizeHandler) {
+        window.removeEventListener('resize', resizeHandler);
+    }
+    
+    // 创建防抖的resize处理函数
+    resizeHandler = debounce(resizeCharts, RESIZE_DEBOUNCE_DELAY);
+    
+    // 添加事件监听器
+    window.addEventListener('resize', resizeHandler);
+}
+
+// 在DOM加载完成后初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setupGlobalResizeHandler();
+    });
+} else {
+    setupGlobalResizeHandler();
+}
 
 // 显示成本分析图表
 function displayCostAnalysisCharts() {
@@ -2460,8 +2958,31 @@ function getCostEfficiencyLabel(quadrant) {
     return labels[quadrant] || '未分类';
 }
 
-// 页面加载完成后的初始化
-document.addEventListener('DOMContentLoaded', function() {
-    // 确保图表容器有正确的尺寸
-    setTimeout(resizeCharts, 500);
-});
+// 清理图表实例
+function cleanupCharts() {
+    // 先清理 ResizeObserver
+    cleanupResizeObserver();
+    
+    // 然后清理图表实例
+    Object.entries(chartInstances).forEach(([name, chart]) => {
+        if (chart && typeof chart.dispose === 'function') {
+            try {
+                chart.dispose();
+            } catch (e) {
+                console.error(`Error disposing chart ${name}:`, e);
+            }
+        }
+    });
+    chartInstances = {};
+}
+
+// 页面卸载时清理
+window.addEventListener('beforeunload', cleanupCharts);
+
+// 布局分析工具初始化（占位函数）
+function initializeLayoutAnalysisTools() {
+    // 布局分析工具的初始化逻辑
+    // 目前为空，可以根据需要添加功能
+    console.log('Layout analysis tools initialized');
+}
+

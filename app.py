@@ -70,10 +70,27 @@ def upload_file():
             return jsonify({'error': '不支持的文件格式，请上传.xlsx或.xls文件'}), 400
         
         # 保存文件
-        filename = secure_filename(file.filename)
+        original_filename = file.filename
+        logger.info(f"原始文件名: {original_filename}")
+
+        filename = secure_filename(original_filename)
+        logger.info(f"secure_filename处理后: {filename}")
+
+        # 处理secure_filename可能返回空字符串或无效字符的情况
+        if not filename or filename.strip() in ['', '-', '_', '.'] or len(filename.strip()) == 0:
+            # 如果secure_filename处理后为空或无效，使用默认名称
+            file_ext = original_filename.rsplit('.', 1)[1].lower() if '.' in original_filename else 'xlsx'
+            filename = f"uploaded_file.{file_ext}"
+            logger.info(f"使用默认文件名: {filename}")
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         unique_filename = f"{timestamp}_{filename}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+
+        logger.info(f"最终文件路径: {filepath}")
+
+        # 确保上传目录存在
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         file.save(filepath)
         
         # 读取Excel文件获取sheet列表

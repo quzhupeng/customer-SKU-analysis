@@ -138,31 +138,41 @@
 
             <!-- 补充分析图表 -->
             <div class="additional-charts">
-                <div class="chart-row">
-                    <div class="chart-container">
-                        <div class="chart-header">
-                            <h3>帕累托分析</h3>
-                            <div class="chart-controls">
-                                <select id="paretoDimensionSelect" class="dimension-select">
-                                    <option value="">选择分析维度...</option>
-                                </select>
+                <!-- 帕累托分析 - 图表和统计信息并排显示 -->
+                <div class="pareto-analysis">
+                    <div class="chart-header">
+                        <h3><i class="fas fa-chart-line"></i> 帕累托分析（80/20法则）</h3>
+                        <div class="chart-controls">
+                            <label for="paretoDimensionSelect" style="font-size: 14px; color: #666; margin-right: 8px;">分析维度:</label>
+                            <select id="paretoDimensionSelect" class="dimension-select">
+                                <option value="">选择分析维度...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="pareto-content">
+                        <div class="pareto-chart-container">
+                            <div class="chart-wrapper">
+                                <div id="paretoChart" class="chart enhanced-chart"></div>
                             </div>
                         </div>
-                        <div id="paretoChart" class="chart"></div>
+                        <!-- 帕累托统计信息 -->
+                        <div class="pareto-stats-section">
+                            <h4 class="stats-title">关键统计信息</h4>
+                            <div class="pareto-stats" id="paretoStats">
+                                <!-- 动态生成统计信息 -->
+                            </div>
+                        </div>
                     </div>
+                </div>
+                <!-- 其他分析图表 -->
+                <div class="chart-row">
                     <div class="chart-container">
                         <h3>分布区间分析</h3>
                         <div id="distributionChart" class="chart"></div>
                     </div>
-                </div>
-                <div class="chart-row">
                     <div class="chart-container">
                         <h3>盈亏分析</h3>
                         <div id="profitLossChart" class="chart"></div>
-                    </div>
-                    <div class="chart-container">
-                        <h3>贡献度分析</h3>
-                        <div id="contributionChart" class="chart"></div>
                     </div>
                 </div>
 
