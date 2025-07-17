@@ -542,16 +542,33 @@ function displayAnalysisResults() {
 function displayQuadrantAnalysis() {
     const quadrantData = analysisResult.quadrant_analysis;
     const chartContainer = document.getElementById('quadrantChart');
-    
+
     // 确保容器有正确的高度
     if (!chartContainer.style.height) {
         chartContainer.style.height = '400px';
     }
 
     console.log('displayQuadrantAnalysis 调试信息:');
-    console.log('- 四象限数据点数量:', quadrantData.scatter_data.length);
+    console.log('- 四象限数据点数量:', quadrantData?.scatter_data?.length || 0);
     console.log('- 当前筛选状态:', isQuadrantFiltered);
     console.log('- 当前筛选类型:', currentFilterType);
+
+    // 验证数据有效性
+    if (!quadrantData || !quadrantData.scatter_data || quadrantData.scatter_data.length === 0) {
+        console.warn('警告: 四象限数据无效或为空');
+        // 显示空图表和提示信息
+        const emptyChart = echarts.init(chartContainer);
+        emptyChart.setOption({
+            title: {
+                text: '没有可显示的数据',
+                subtext: '请尝试重置筛选或选择其他分析类型',
+                left: 'center',
+                top: 'center'
+            }
+        });
+        chartInstances['quadrantChart'] = emptyChart;
+        return;
+    }
 
     // 获取或创建图表实例
     let chart = chartInstances['quadrantChart'];
@@ -1555,10 +1572,26 @@ function displayDistributionChart() {
 
 // 显示区间详细信息的下钻功能
 function showIntervalDetails(intervalName, distributionData) {
+    // 检查是否有详情数据
     const details = distributionData.interval_details[intervalName];
+
     if (!details || details.length === 0) {
-        alert('该区间暂无详细数据');
-        return;
+        // 检查该区间是否确实没有数据（从interval_data中确认）
+        const intervalData = distributionData.interval_data.find(item => item.区间 === intervalName);
+
+        if (!intervalData || intervalData.项目数量 === 0) {
+            alert('该区间暂无详细数据');
+            return;
+        } else {
+            // 如果interval_data显示有数据但interval_details中没有，说明数据结构有问题
+            console.warn('数据结构不一致：interval_data显示有数据但interval_details中没有', {
+                intervalName,
+                intervalData,
+                availableDetails: Object.keys(distributionData.interval_details || {})
+            });
+            alert('数据加载异常，请刷新页面重试');
+            return;
+        }
     }
 
     // 创建模态框显示详细信息
@@ -1709,6 +1742,40 @@ function sortIntervalTable(headerElement, sortField) {
 // 盈亏分析图
 function displayProfitLossChart() {
     const profitLossData = analysisResult.additional_analysis.profit_loss_analysis;
+
+    // 调试：检查后端返回的盈亏分析数据
+    console.log('=== 后端盈亏分析数据调试 ===');
+    console.log('盈利项目数量:', profitLossData.profitable_items.length);
+    console.log('亏损项目数量:', profitLossData.loss_making_items.length);
+
+    // 查找春雪小酥肉
+    const chunxueProfitable = profitLossData.profitable_items.find(item =>
+        (item.group && item.group.includes('春雪')) ||
+        (item['物料名称'] && item['物料名称'].includes('春雪'))
+    );
+    const chunxueLoss = profitLossData.loss_making_items.find(item =>
+        (item.group && item.group.includes('春雪')) ||
+        (item['物料名称'] && item['物料名称'].includes('春雪'))
+    );
+
+    if (chunxueProfitable) {
+        console.log('春雪小酥肉在盈利项目中:', chunxueProfitable);
+    }
+    if (chunxueLoss) {
+        console.log('春雪小酥肉在亏损项目中:', chunxueLoss);
+    }
+    if (!chunxueProfitable && !chunxueLoss) {
+        console.log('未找到春雪小酥肉，显示前3个盈利项目:');
+        profitLossData.profitable_items.slice(0, 3).forEach((item, i) => {
+            console.log(`盈利项目${i+1}:`, item);
+        });
+        console.log('显示前3个亏损项目:');
+        profitLossData.loss_making_items.slice(0, 3).forEach((item, i) => {
+            console.log(`亏损项目${i+1}:`, item);
+        });
+    }
+    console.log('=== 调试结束 ===');
+
     const chartContainer = document.getElementById('profitLossChart');
     
     // 确保容器有正确的高度
@@ -1811,16 +1878,91 @@ function filterQuadrantByLossItems() {
     const groupField = getGroupFieldName();
     console.log('- 分组字段名:', groupField);
 
-    // 创建亏损项目名称集合，用于快速查找
-    const lossItemNames = new Set(lossItems.map(item => item[groupField]));
+    // 创建亏损项目名称集合，优先使用backend添加的'group'字段
+    const lossItemNames = new Set();
+
+    // 调试信息：检查亏损项目的字段结构
+    console.log('- 亏损项目字段结构分析:');
+    if (lossItems.length > 0) {
+        console.log('  - 第一个亏损项目字段:', Object.keys(lossItems[0]));
+        console.log('  - 第一个亏损项目内容:', lossItems[0]);
+    }
+
+    lossItems.forEach(item => {
+        let itemName = null;
+
+        // 1. 优先使用backend添加的'group'字段
+        if (item.group !== undefined && item.group !== null) {
+            itemName = item.group;
+        }
+        // 2. 如果没有group字段，尝试使用检测到的字段名
+        else if (item[groupField] !== undefined && item[groupField] !== null) {
+            itemName = item[groupField];
+        }
+        // 3. 尝试其他可能的字段名
+        else {
+            const possibleFields = Object.keys(item);
+            for (const field of possibleFields) {
+                if ((field.includes('客户') || field.includes('产品') || field.includes('地区') ||
+                     field.includes('名称') || field === 'index') &&
+                    item[field] !== undefined && item[field] !== null) {
+                    itemName = item[field];
+                    console.log(`  - 使用备用字段 '${field}' 获取名称: ${itemName}`);
+                    break;
+                }
+            }
+        }
+
+        if (itemName !== null && itemName !== undefined) {
+            lossItemNames.add(itemName);
+        }
+    });
+
     console.log('- 亏损项目名称集合大小:', lossItemNames.size);
+    console.log('- 亏损项目名称示例:', Array.from(lossItemNames).slice(0, 5));
+
+    // 调试：检查散点数据中的字段名
+    if (originalQuadrantData.scatter_data.length > 0) {
+        const scatterSample = originalQuadrantData.scatter_data[0];
+        console.log('- 散点数据字段名:', Object.keys(scatterSample));
+        console.log('- 散点数据示例名称 (使用字段 ' + groupField + '):', scatterSample[groupField]);
+
+        // 检查散点数据中是否有group字段
+        if (scatterSample.group !== undefined) {
+            console.log('- 散点数据中的group字段:', scatterSample.group);
+        }
+    }
 
     // 筛选四象限数据，只保留亏损项目
-    const filteredScatterData = originalQuadrantData.scatter_data.filter(item =>
-        lossItemNames.has(item[groupField])
-    );
+    const filteredScatterData = originalQuadrantData.scatter_data.filter(item => {
+        // 尝试多种字段名进行匹配
+        const possibleNames = [
+            item[groupField],
+            item.group,
+            item.index
+        ].filter(name => name !== undefined && name !== null);
+
+        // 检查是否有任何一个名称在亏损项目集合中
+        return possibleNames.some(name => lossItemNames.has(name));
+    });
 
     console.log('- 筛选后散点数据数量:', filteredScatterData.length);
+
+    // 如果筛选后没有数据，提供详细的调试信息
+    if (filteredScatterData.length === 0) {
+        console.log('=== 筛选失败调试信息 ===');
+        console.log('- 亏损项目名称:', Array.from(lossItemNames));
+        console.log('- 散点数据名称示例:');
+        originalQuadrantData.scatter_data.slice(0, 5).forEach((item, index) => {
+            console.log(`  散点${index + 1}:`, {
+                [groupField]: item[groupField],
+                group: item.group,
+                index: item.index,
+                allFields: Object.keys(item)
+            });
+        });
+        console.log('========================');
+    }
 
     // 创建筛选后的四象限数据对象
     const filteredQuadrantData = {
@@ -1988,14 +2130,40 @@ function filterQuadrantByProfitableItems() {
         }
     }
 
-    // 创建盈利项目名称集合，使用检测到的字段名
-    let profitableItemNames = new Set(profitableItems.map(item => {
-        const name = item[profitableFieldName];
-        if (name === undefined || name === null) {
-            console.log(`警告：盈利项目中发现空名称 (字段: ${profitableFieldName}):`, item);
+    // 创建盈利项目名称集合，优先使用backend添加的'group'字段
+    let profitableItemNames = new Set();
+
+    profitableItems.forEach(item => {
+        let itemName = null;
+
+        // 1. 优先使用backend添加的'group'字段
+        if (item.group !== undefined && item.group !== null) {
+            itemName = item.group;
         }
-        return name;
-    }).filter(name => name !== undefined && name !== null));
+        // 2. 如果没有group字段，尝试使用检测到的字段名
+        else if (item[profitableFieldName] !== undefined && item[profitableFieldName] !== null) {
+            itemName = item[profitableFieldName];
+        }
+        // 3. 尝试其他可能的字段名
+        else {
+            const possibleFields = Object.keys(item);
+            for (const field of possibleFields) {
+                if ((field.includes('客户') || field.includes('产品') || field.includes('地区') ||
+                     field.includes('名称') || field === 'index') &&
+                    item[field] !== undefined && item[field] !== null) {
+                    itemName = item[field];
+                    console.log(`  - 使用备用字段 '${field}' 获取盈利项目名称: ${itemName}`);
+                    break;
+                }
+            }
+        }
+
+        if (itemName !== null && itemName !== undefined) {
+            profitableItemNames.add(itemName);
+        } else {
+            console.log(`警告：盈利项目中发现空名称:`, item);
+        }
+    });
 
     // 如果没有找到任何名称，尝试其他可能的字段名
     if (profitableItemNames.size === 0 && profitableItems.length > 0) {
@@ -2019,6 +2187,13 @@ function filterQuadrantByProfitableItems() {
 
     console.log('- 盈利项目名称集合大小:', profitableItemNames.size);
     console.log('- 盈利项目名称示例:', Array.from(profitableItemNames).slice(0, 5));
+
+    // 调试：检查散点数据中的字段名
+    if (originalQuadrantData.scatter_data.length > 0) {
+        const scatterSample = originalQuadrantData.scatter_data[0];
+        console.log('- 散点数据字段名:', Object.keys(scatterSample));
+        console.log('- 散点数据示例名称 (使用字段 ' + scatterFieldName + '):', scatterSample[scatterFieldName]);
+    }
 
     // 调试：检查散点数据中的名称，使用检测到的字段名
     const scatterItemNames = new Set(originalQuadrantData.scatter_data.map(item => {
@@ -2084,24 +2259,36 @@ function filterQuadrantByProfitableItems() {
 
     // 筛选四象限数据，只保留盈利项目，使用检测到的字段名
     const filteredScatterData = originalQuadrantData.scatter_data.filter(item => {
-        const itemName = item[scatterFieldName];
-        
-        // 首先尝试精确匹配
-        if (profitableItemNames.has(itemName)) {
-            return true;
-        }
-        
-        // 如果没有精确匹配，尝试模糊匹配
-        for (const profitName of profitableItemNames) {
-            if (fuzzyMatch && fuzzyMatch(itemName, profitName)) {
-                return true;
-            }
-        }
-        
-        return false;
+        // 尝试多种字段名进行匹配
+        const possibleNames = [
+            item[scatterFieldName],
+            item[groupField],
+            item.group,
+            item.index
+        ].filter(name => name !== undefined && name !== null);
+
+        // 检查是否有任何一个名称在盈利项目集合中
+        return possibleNames.some(name => profitableItemNames.has(name));
     });
 
     console.log('- 筛选后散点数据数量:', filteredScatterData.length);
+
+    // 如果筛选后没有数据，提供详细的调试信息
+    if (filteredScatterData.length === 0) {
+        console.log('=== 盈利项目筛选失败调试信息 ===');
+        console.log('- 盈利项目名称:', Array.from(profitableItemNames));
+        console.log('- 散点数据名称示例:');
+        originalQuadrantData.scatter_data.slice(0, 5).forEach((item, index) => {
+            console.log(`  散点${index + 1}:`, {
+                [groupField]: item[groupField],
+                [scatterFieldName]: item[scatterFieldName],
+                group: item.group,
+                index: item.index,
+                allFields: Object.keys(item)
+            });
+        });
+        console.log('=============================');
+    }
 
     // 创建筛选后的四象限数据对象
     const filteredQuadrantData = {
@@ -2832,13 +3019,24 @@ function displayCostRateChart(rateData) {
             },
             formatter: function(params) {
                 const data = rateData.distribution_data[params[0].dataIndex];
-                return `${params[0].name}<br/>数量: ${data.count}<br/>占比: ${data.percentage}%`;
+                let tooltip = `${params[0].name}<br/>数量: ${data.count}<br/>占比: ${data.percentage}%`;
+
+                // 如果有区间信息，显示更多详情
+                if (rateData.intervals_info) {
+                    tooltip += `<br/><span style="color: #666; font-size: 12px;">点击查看详细项目列表</span>`;
+                }
+
+                return tooltip;
             }
         },
         xAxis: {
             type: 'category',
             data: categories,
-            name: '成本率区间'
+            name: '成本率区间',
+            axisLabel: {
+                rotate: 45,  // 旋转标签避免重叠
+                fontSize: 12
+            }
         },
         yAxis: {
             type: 'value',
@@ -2857,6 +3055,14 @@ function displayCostRateChart(rateData) {
     };
 
     chart.setOption(option);
+
+    // 添加点击事件实现下钻功能
+    chart.on('click', function(params) {
+        if (params.componentType === 'series') {
+            const intervalName = params.name;
+            showCostRateIntervalDetails(intervalName, rateData);
+        }
+    });
 }
 
 // 成本效率散点图
@@ -2945,6 +3151,14 @@ function displayCostEfficiencyChart(efficiencyData) {
     };
 
     chart.setOption(option);
+
+    // 添加点击事件实现下钻功能
+    chart.on('click', function(params) {
+        if (params.componentType === 'series') {
+            const dataItem = params.data[2]; // 获取完整的数据项
+            showCostEfficiencyItemDetails(dataItem);
+        }
+    });
 }
 
 // 获取成本效率分类标签
@@ -2984,5 +3198,238 @@ function initializeLayoutAnalysisTools() {
     // 布局分析工具的初始化逻辑
     // 目前为空，可以根据需要添加功能
     console.log('Layout analysis tools initialized');
+}
+
+// 显示成本率区间详细信息的下钻功能
+function showCostRateIntervalDetails(intervalName, rateData) {
+    // 检查是否有详情数据
+    const details = rateData.interval_details && rateData.interval_details[intervalName];
+
+    if (!details || details.length === 0) {
+        alert('该成本率区间暂无详细数据');
+        return;
+    }
+
+    // 创建模态框显示详细信息
+    const modal = document.createElement('div');
+    modal.className = 'cost-rate-details-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+    `;
+
+    // 构建表格内容
+    let tableHtml = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: #333;">成本率区间：${intervalName} - 详细项目列表</h3>
+            <button onclick="this.closest('.cost-rate-details-modal').remove()"
+                    style="background: #f5f5f5; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">
+                关闭
+            </button>
+        </div>
+        <div style="margin-bottom: 15px; color: #666;">
+            共 ${details.length} 个项目，点击表头可排序
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: left;">项目名称</th>
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                        onclick="sortCostRateTable('cost_rate')">成本率 ↕</th>
+                    <th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                        onclick="sortCostRateTable('amount')">销售金额(万元) ↕</th>`;
+
+    // 根据可用字段添加列
+    if (details[0] && details[0].profit !== undefined) {
+        tableHtml += `<th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                          onclick="sortCostRateTable('profit')">毛利(万元) ↕</th>`;
+    }
+    if (details[0] && details[0].quantity !== undefined) {
+        tableHtml += `<th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                          onclick="sortCostRateTable('quantity')">销量(吨) ↕</th>`;
+    }
+    if (details[0] && details[0].total_cost !== undefined) {
+        tableHtml += `<th style="border: 1px solid #dee2e6; padding: 12px; text-align: right; cursor: pointer;"
+                          onclick="sortCostRateTable('total_cost')">总成本(万元) ↕</th>`;
+    }
+
+    tableHtml += `</tr></thead><tbody>`;
+
+    // 添加数据行
+    details.forEach(item => {
+        tableHtml += `
+            <tr style="border-bottom: 1px solid #dee2e6;">
+                <td style="border: 1px solid #dee2e6; padding: 12px;">${item.name}</td>
+                <td style="border: 1px solid #dee2e6; padding: 12px; text-align: right;">${(item.cost_rate * 100).toFixed(2)}%</td>
+                <td style="border: 1px solid #dee2e6; padding: 12px; text-align: right;">${item.amount}</td>`;
+
+        if (item.profit !== undefined) {
+            tableHtml += `<td style="border: 1px solid #dee2e6; padding: 12px; text-align: right;">${item.profit}</td>`;
+        }
+        if (item.quantity !== undefined) {
+            tableHtml += `<td style="border: 1px solid #dee2e6; padding: 12px; text-align: right;">${item.quantity}</td>`;
+        }
+        if (item.total_cost !== undefined) {
+            tableHtml += `<td style="border: 1px solid #dee2e6; padding: 12px; text-align: right;">${item.total_cost}</td>`;
+        }
+
+        tableHtml += `</tr>`;
+    });
+
+    tableHtml += `</tbody></table>`;
+
+    modal.innerHTML = `
+        <div style="background: white; border-radius: 8px; padding: 30px; max-width: 90%; max-height: 80%; overflow: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+            ${tableHtml}
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // 存储当前数据用于排序
+    modal._costRateDetails = details;
+    modal._intervalName = intervalName;
+}
+
+// 成本率表格排序功能
+function sortCostRateTable(field) {
+    const modal = document.querySelector('.cost-rate-details-modal');
+    if (!modal || !modal._costRateDetails) return;
+
+    const details = modal._costRateDetails;
+    const intervalName = modal._intervalName;
+
+    // 切换排序方向
+    if (!modal._sortField || modal._sortField !== field) {
+        modal._sortDirection = 'desc';
+    } else {
+        modal._sortDirection = modal._sortDirection === 'desc' ? 'asc' : 'desc';
+    }
+    modal._sortField = field;
+
+    // 排序数据
+    details.sort((a, b) => {
+        let aVal = a[field];
+        let bVal = b[field];
+
+        if (typeof aVal === 'string') {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+        }
+
+        if (modal._sortDirection === 'desc') {
+            return bVal > aVal ? 1 : -1;
+        } else {
+            return aVal > bVal ? 1 : -1;
+        }
+    });
+
+    // 重新生成表格内容
+    modal.remove();
+    showCostRateIntervalDetails(intervalName, { interval_details: { [intervalName]: details } });
+}
+
+// 显示成本效率散点图项目详细信息
+function showCostEfficiencyItemDetails(dataItem) {
+    if (!dataItem) {
+        alert('无法获取项目详细信息');
+        return;
+    }
+
+    // 创建模态框显示详细信息
+    const modal = document.createElement('div');
+    modal.className = 'cost-efficiency-details-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+    `;
+
+    // 获取象限标签
+    const quadrantLabels = {
+        'efficient': '高效率低成本',
+        'low_volume': '低效率低成本',
+        'high_cost': '高效率高成本',
+        'inefficient': '低效率高成本'
+    };
+
+    const quadrantLabel = quadrantLabels[dataItem.quadrant] || '未分类';
+
+    // 构建详细信息内容
+    const detailsHtml = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0; color: #333;">项目详细信息</h3>
+            <button onclick="this.closest('.cost-efficiency-details-modal').remove()"
+                    style="background: #f5f5f5; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">
+                关闭
+            </button>
+        </div>
+
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 10px 0; color: #495057;">基本信息</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <strong>项目名称:</strong><br/>
+                    <span style="font-size: 16px; color: #007bff;">${dataItem.name}</span>
+                </div>
+                <div>
+                    <strong>效率分类:</strong><br/>
+                    <span style="font-size: 16px; color: #28a745;">${quadrantLabel}</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="background: #fff; border: 1px solid #dee2e6; border-radius: 6px; overflow: hidden;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #e9ecef;">
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">指标</th>
+                        <th style="padding: 12px; text-align: right; border-bottom: 1px solid #dee2e6;">数值</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">成本率</td>
+                        <td style="padding: 12px; text-align: right; border-bottom: 1px solid #dee2e6;">
+                            ${(dataItem.cost_rate * 100).toFixed(2)}%
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">效率值</td>
+                        <td style="padding: 12px; text-align: right; border-bottom: 1px solid #dee2e6;">
+                            ${dataItem.efficiency_value.toFixed(2)}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 4px; font-size: 12px; color: #1565c0;">
+            <strong>提示:</strong> 点击四象限散点图中的对应数据点可以在下方数据表格中查看更详细的信息
+        </div>
+    `;
+
+    modal.innerHTML = `
+        <div style="background: white; border-radius: 8px; padding: 30px; max-width: 600px; max-height: 80%; overflow: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+            ${detailsHtml}
+        </div>
+    `;
+
+    document.body.appendChild(modal);
 }
 

@@ -438,6 +438,13 @@ class DataAnalyzer:
                     item['group'] = matching_rows.iloc[0][group_column]
                 elif group_column in item:
                     item['group'] = item[group_column]
+                else:
+                    # 如果找不到匹配的行，尝试直接从item中获取group_column的值
+                    if group_column in item:
+                        item['group'] = item[group_column]
+                    else:
+                        # 最后尝试使用index作为group
+                        item['group'] = item.get('index', str(item))
 
         return {
             'scatter_data': scatter_data_output,
@@ -664,17 +671,20 @@ class DataAnalyzer:
         # 双指标统计：数量统计 + 价值统计
         if config['primary_field'] == config['value_field']:
             # 当主要字段和价值字段相同时（如客户分析），只对一个字段进行聚合
-            interval_stats = data.groupby('区间', observed=True).agg({
+            interval_stats = data.groupby('区间', observed=False).agg({
                 primary_column: ['count', 'sum', 'mean']
             }).round(2)
             interval_stats.columns = ['项目数量', '价值总和', '价值平均']
         else:
             # 当主要字段和价值字段不同时（如产品分析），对两个字段分别聚合
-            interval_stats = data.groupby('区间', observed=True).agg({
+            interval_stats = data.groupby('区间', observed=False).agg({
                 primary_column: ['count', 'sum', 'mean'],
                 value_column: ['sum', 'mean']
             }).round(2)
             interval_stats.columns = ['项目数量', '主要指标总和', '主要指标平均', '价值总和', '价值平均']
+
+        # 处理空区间的NaN值
+        interval_stats = interval_stats.fillna(0)
 
         # 计算百分比
         total_count = len(data)
@@ -683,8 +693,11 @@ class DataAnalyzer:
         interval_stats['数量占比'] = (interval_stats['项目数量'] / total_count * 100).round(1)
         interval_stats['价值占比'] = (interval_stats['价值总和'] / total_value * 100).round(1)
 
-        # 计算平均价值（价值总和 / 项目数量）
-        interval_stats['单项平均价值'] = (interval_stats['价值总和'] / interval_stats['项目数量']).round(2)
+        # 计算平均价值（价值总和 / 项目数量），避免除零错误
+        interval_stats['单项平均价值'] = interval_stats.apply(
+            lambda row: round(row['价值总和'] / row['项目数量'], 2) if row['项目数量'] > 0 else 0,
+            axis=1
+        )
 
         # 重置索引以便转换为字典
         interval_stats_reset = interval_stats.reset_index()
@@ -712,6 +725,9 @@ class DataAnalyzer:
                 # 按价值降序排序
                 items.sort(key=lambda x: x['value'], reverse=True)
                 interval_details[interval_name] = items
+            else:
+                # 为空区间也创建空列表，保持数据结构一致性
+                interval_details[interval_name] = []
 
         return {
             'title': config['title'],
@@ -735,9 +751,49 @@ class DataAnalyzer:
             raise ValueError("缺少盈亏分析所需的毛利字段")
         profit_column = self.field_mapping['profit']
 
+        # 根据分析类型选择合适的盈亏判断标准
+        if analysis_type == 'product' and '吨毛利' in data.columns:
+            # 对于产品分析，使用吨毛利作为盈亏判断标准，与四象限分析保持一致
+            profit_criterion_column = '吨毛利'
+        else:
+            # 对于客户和地区分析，使用总毛利作为判断标准
+            profit_criterion_column = profit_column
+
         # 分离盈利和亏损数据
-        profitable = data[data[profit_column] > 0]
-        loss_making = data[data[profit_column] <= 0]
+        profitable = data[data[profit_criterion_column] > 0]
+        loss_making = data[data[profit_criterion_column] <= 0]
+
+        # 强制调试：将信息写入文件
+        import os
+        debug_file = os.path.join(os.path.dirname(__file__), 'profit_loss_debug.txt')
+        with open(debug_file, 'w', encoding='utf-8') as f:
+            f.write(f"=== 盈亏分析调试信息 ===\n")
+            f.write(f"分析类型: {analysis_type}\n")
+            f.write(f"判断字段: {profit_criterion_column}\n")
+            f.write(f"数据总数: {len(data)}\n")
+            f.write(f"盈利项目数: {len(profitable)}\n")
+            f.write(f"亏损项目数: {len(loss_making)}\n")
+
+            # 查找包含"春雪"或"小酥肉"的产品
+            group_col = self._get_group_column(analysis_type)
+            chunxue_mask = data[group_col].str.contains('春雪|小酥肉', na=False, case=False)
+            if chunxue_mask.any():
+                f.write("找到春雪相关产品:\n")
+                for idx, row in data[chunxue_mask].iterrows():
+                    product_name = row[group_col]
+                    criterion_value = row[profit_criterion_column]
+                    profit_value = row[profit_column]
+                    is_profitable = criterion_value > 0
+                    f.write(f"  - {product_name}: {profit_criterion_column}={criterion_value}, 毛利={profit_value}, 分类={'盈利' if is_profitable else '亏损'}\n")
+            else:
+                f.write("未找到春雪相关产品，显示前5个产品:\n")
+                for idx, row in data.head(5).iterrows():
+                    product_name = row[group_col]
+                    criterion_value = row[profit_criterion_column]
+                    profit_value = row[profit_column]
+                    is_profitable = criterion_value > 0
+                    f.write(f"  - {product_name}: {profit_criterion_column}={criterion_value}, 毛利={profit_value}, 分类={'盈利' if is_profitable else '亏损'}\n")
+            f.write("========================\n")
 
         # 统计信息
         total_count = len(data)
@@ -747,7 +803,7 @@ class DataAnalyzer:
         profitable_percentage = round(profitable_count / total_count * 100, 2) if total_count > 0 else 0
         loss_percentage = round(loss_count / total_count * 100, 2) if total_count > 0 else 0
 
-        # 盈亏金额统计
+        # 盈亏金额统计 - 始终使用总毛利进行金额统计，但分类使用对应的标准
         total_profit = profitable[profit_column].sum() if len(profitable) > 0 else 0
         total_loss = abs(loss_making[profit_column].sum()) if len(loss_making) > 0 else 0
         net_profit = total_profit - total_loss
@@ -766,6 +822,13 @@ class DataAnalyzer:
                     item['group'] = matching_rows.iloc[0][group_column]
                 elif group_column in item:
                     item['group'] = item[group_column]
+                else:
+                    # 如果找不到匹配的行，尝试直接从item中获取group_column的值
+                    if group_column in item:
+                        item['group'] = item[group_column]
+                    else:
+                        # 最后尝试使用index作为group
+                        item['group'] = item.get('index', str(item))
 
         # Add group field to loss-making items
         for item in loss_making_output:
@@ -776,6 +839,13 @@ class DataAnalyzer:
                     item['group'] = matching_rows.iloc[0][group_column]
                 elif group_column in item:
                     item['group'] = item[group_column]
+                else:
+                    # 如果找不到匹配的行，尝试直接从item中获取group_column的值
+                    if group_column in item:
+                        item['group'] = item[group_column]
+                    else:
+                        # 最后尝试使用index作为group
+                        item['group'] = item.get('index', str(item))
 
         return {
             'summary': {
@@ -931,20 +1001,64 @@ class DataAnalyzer:
         }
 
     def _cost_rate_distribution(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """成本率分布分析"""
+        """成本率分布分析 - 动态区间划分版本"""
         cost_rates = data['成本率'].dropna()
 
-        # 定义成本率区间
-        intervals = [0, 0.3, 0.5, 0.7, 0.8, 1.0]
-        labels = ['<30%', '30-50%', '50-70%', '70-80%', '>80%']
+        if len(cost_rates) == 0:
+            return {
+                'distribution_data': [],
+                'avg_cost_rate': 0,
+                'median_cost_rate': 0,
+                'interval_details': {}
+            }
+
+        # 动态计算区间：优先使用四分位数，但确保合理的区间数量
+        min_rate = cost_rates.min()
+        max_rate = cost_rates.max()
+
+        # 如果数据范围很小，使用固定的小区间
+        if max_rate - min_rate < 0.1:  # 范围小于10%
+            # 使用较小的固定区间
+            center = (min_rate + max_rate) / 2
+            intervals = [0, center - 0.05, center, center + 0.05, 1.0]
+            intervals = [max(0, min(1, x)) for x in intervals]  # 确保在[0,1]范围内
+            intervals = sorted(list(set(intervals)))  # 去重并排序
+        else:
+            # 使用四分位数进行动态划分
+            q25 = cost_rates.quantile(0.25)
+            q50 = cost_rates.quantile(0.50)  # 中位数
+            q75 = cost_rates.quantile(0.75)
+
+            # 构建区间，确保覆盖所有数据
+            intervals = [0, q25, q50, q75, 1.0]
+
+            # 去除重复值并确保至少有2个区间
+            intervals = sorted(list(set(intervals)))
+            if len(intervals) < 3:  # 至少需要3个边界点形成2个区间
+                # 如果四分位数重复太多，回退到等距划分
+                intervals = [0, 0.25, 0.5, 0.75, 1.0]
+
+        # 生成标签
+        labels = []
+        for i in range(len(intervals) - 1):
+            start_pct = int(intervals[i] * 100)
+            end_pct = int(intervals[i + 1] * 100)
+            if i == len(intervals) - 2:  # 最后一个区间
+                labels.append(f'>{start_pct}%')
+            else:
+                labels.append(f'{start_pct}-{end_pct}%')
 
         # 创建区间分组
-        cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False)
+        cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False, include_lowest=True)
 
         # 统计各区间数据
         interval_stats = cost_rate_intervals.value_counts().sort_index()
 
+        # 准备分布数据和详细信息
         distribution_data = []
+        interval_details = {}
+        group_column = self._get_group_column('product')  # 成本分析主要用于产品分析
+
         for interval, count in interval_stats.items():
             distribution_data.append({
                 'interval': str(interval),
@@ -952,10 +1066,41 @@ class DataAnalyzer:
                 'percentage': round(count / len(cost_rates) * 100, 2)
             })
 
+            # 为下钻功能准备详细数据
+            interval_name = str(interval)
+            interval_mask = cost_rate_intervals == interval
+            interval_data = data[interval_mask]
+
+            items = []
+            for _, row in interval_data.iterrows():
+                item = {
+                    'name': row[group_column],
+                    'cost_rate': round(row['成本率'], 4),  # 成本率保留4位小数
+                    'amount': round(row[self.field_mapping.get('amount', 'amount')], 2) if 'amount' in self.field_mapping else 0,
+                }
+                # 添加其他有用字段
+                if 'profit' in self.field_mapping:
+                    item['profit'] = round(row[self.field_mapping['profit']], 2)
+                if 'quantity' in self.field_mapping:
+                    item['quantity'] = round(row[self.field_mapping['quantity']], 2)
+                if '总成本' in row:
+                    item['total_cost'] = round(row['总成本'], 2)
+                items.append(item)
+
+            # 按成本率降序排序
+            items.sort(key=lambda x: x['cost_rate'], reverse=True)
+            interval_details[interval_name] = items
+
         return {
             'distribution_data': distribution_data,
             'avg_cost_rate': float(cost_rates.mean()),
-            'median_cost_rate': float(cost_rates.median())
+            'median_cost_rate': float(cost_rates.median()),
+            'interval_details': interval_details,
+            'intervals_info': {
+                'method': 'dynamic_quartiles' if max_rate - min_rate >= 0.1 else 'small_range_fixed',
+                'range': f'{min_rate:.1%} - {max_rate:.1%}',
+                'intervals': intervals
+            }
         }
 
     def _cost_efficiency_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
