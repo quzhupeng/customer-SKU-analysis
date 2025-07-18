@@ -2450,31 +2450,31 @@ function displayDataTable() {
 // 获取表格字段配置
 function getTableFieldConfig() {
     const baseConfig = [
-        { key: getGroupFieldName(), label: getGroupFieldLabel(), className: 'col-name', headerStyle: 'min-width: 150px;' },
-        { key: '象限名称', label: '象限分类', className: 'col-quadrant', headerStyle: 'min-width: 100px;' },
+        { key: getGroupFieldName(), label: getGroupFieldLabel(), className: 'col-name', headerStyle: 'min-width: 150px; text-align: left;' },
+        { key: '象限名称', label: '象限分类', className: 'col-quadrant', headerStyle: 'min-width: 120px; text-align: center;' },
     ];
 
     // 根据分析类型添加特定字段
     if (currentAnalysisType === 'product') {
         baseConfig.push(
-            { key: '销量(吨)', label: '销量(吨)', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'number' },
-            { key: '吨毛利', label: '吨毛利(元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'currency' },
-            { key: '总金额(万元)', label: '总金额(万元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
-            { key: '总毛利(万元)', label: '总毛利(万元)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' }
+            { key: '销量(吨)', label: '销量(吨)', className: 'col-number', headerStyle: 'min-width: 80px; text-align: right;', format: 'number' },
+            { key: '吨毛利', label: '吨毛利(元)', className: 'col-currency', headerStyle: 'min-width: 100px; text-align: right;', format: 'profit' },
+            { key: '总金额(万元)', label: '总金额(万元)', className: 'col-number', headerStyle: 'min-width: 100px; text-align: right;', format: 'number' },
+            { key: '总毛利(万元)', label: '总毛利(万元)', className: 'col-currency', headerStyle: 'min-width: 100px; text-align: right;', format: 'profit' }
         );
     } else if (currentAnalysisType === 'customer') {
         baseConfig.push(
-            { key: '采购金额(万元)', label: '采购金额(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
-            { key: '毛利贡献(万元)', label: '毛利贡献(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
-            { key: '采购数量(吨)', label: '采购数量(吨)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
-            { key: '客户毛利率', label: '毛利率(%)', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'percent' }
+            { key: '采购金额(万元)', label: '采购金额(万元)', className: 'col-number', headerStyle: 'min-width: 120px; text-align: right;', format: 'number' },
+            { key: '毛利贡献(万元)', label: '毛利贡献(万元)', className: 'col-currency', headerStyle: 'min-width: 120px; text-align: right;', format: 'profit' },
+            { key: '采购数量(吨)', label: '采购数量(吨)', className: 'col-number', headerStyle: 'min-width: 100px; text-align: right;', format: 'number' },
+            { key: '客户毛利率', label: '毛利率(%)', className: 'col-percent', headerStyle: 'min-width: 80px; text-align: right;', format: 'percent' }
         );
     } else if (currentAnalysisType === 'region') {
         baseConfig.push(
-            { key: '地区销售金额(万元)', label: '销售金额(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
-            { key: '地区毛利贡献(万元)', label: '毛利贡献(万元)', className: 'col-number', headerStyle: 'min-width: 120px;', format: 'number' },
-            { key: '地区销售数量(吨)', label: '销售数量(吨)', className: 'col-number', headerStyle: 'min-width: 100px;', format: 'number' },
-            { key: '地区客户数量', label: '客户数量', className: 'col-number', headerStyle: 'min-width: 80px;', format: 'integer' }
+            { key: '地区销售金额(万元)', label: '销售金额(万元)', className: 'col-number', headerStyle: 'min-width: 120px; text-align: right;', format: 'number' },
+            { key: '地区毛利贡献(万元)', label: '毛利贡献(万元)', className: 'col-currency', headerStyle: 'min-width: 120px; text-align: right;', format: 'profit' },
+            { key: '地区销售数量(吨)', label: '销售数量(吨)', className: 'col-number', headerStyle: 'min-width: 100px; text-align: right;', format: 'number' },
+            { key: '地区客户数量', label: '客户数量', className: 'col-integer', headerStyle: 'min-width: 80px; text-align: right;', format: 'integer' }
         );
     }
 
@@ -2489,9 +2489,6 @@ function getTableFieldConfig() {
             baseConfig.push(field);
         }
     });
-
-    // 添加策略建议
-    baseConfig.push({ key: '建议策略', label: '建议策略', className: 'col-strategy', headerStyle: 'min-width: 200px;' });
 
     return baseConfig;
 }
@@ -2508,14 +2505,34 @@ function displayTableData(data, fieldConfig) {
                 const value = row[config.key];
                 let displayValue = formatTableValue(value, config.format);
                 let cellClass = config.className || '';
+                let cellContent = displayValue || '';
 
-                // 为象限名称添加颜色样式
+                // 为象限名称添加标签样式
                 if (config.key === '象限名称') {
                     const quadrantClass = getQuadrantClass(value);
-                    cellClass += ` ${quadrantClass}`;
+                    cellContent = `<span class="quadrant-badge ${quadrantClass}">${displayValue}</span>`;
                 }
 
-                bodyHtml += `<td class="${cellClass}">${displayValue || ''}</td>`;
+                // 为利润相关字段添加颜色和数据条
+                if (config.format === 'profit' && typeof value === 'number') {
+                    const profitClass = value > 0 ? 'profit-positive' : value < 0 ? 'profit-negative' : 'profit-zero';
+                    cellClass += ` ${profitClass}`;
+
+                    // 添加数据条（可选）
+                    if (Math.abs(value) > 0) {
+                        const maxValue = Math.max(...data.map(d => Math.abs(d[config.key] || 0)));
+                        const barWidth = Math.abs(value) / maxValue * 50; // 最大50%宽度
+                        const barClass = value >= 0 ? 'positive' : 'negative';
+                        cellContent = `
+                            <div class="data-bar-container">
+                                <div class="data-bar ${barClass}" style="width: ${barWidth}%"></div>
+                                <div class="data-value">${displayValue}</div>
+                            </div>
+                        `;
+                    }
+                }
+
+                bodyHtml += `<td class="${cellClass}">${cellContent}</td>`;
             }
         });
         bodyHtml += '</tr>';
@@ -2618,9 +2635,19 @@ function formatTableValue(value, format) {
         case 'currency':
             return typeof value === 'number' ?
                 value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : value;
+        case 'profit':
+            if (typeof value === 'number') {
+                const formatted = value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                return value >= 0 ? `+${formatted}` : formatted;
+            }
+            return value;
         case 'percent':
-            return typeof value === 'number' ?
-                (value * 100).toFixed(2) + '%' : value;
+            if (typeof value === 'number') {
+                // 修复成本率显示错误 - 如果值大于1，说明已经是百分比形式
+                const percentValue = value > 1 ? value : value * 100;
+                return percentValue.toFixed(2) + '%';
+            }
+            return value;
         default:
             return value;
     }
@@ -2654,7 +2681,7 @@ function setupTableControls(originalData) {
 
         const options = quadrantNames[currentAnalysisType] || quadrants;
         filterSelect.innerHTML = options.map(option =>
-            `<option value="${option}">${option || '全部'}</option>`
+            `<option value="${option}">${option || '全部象限'}</option>`
         ).join('');
 
         filterSelect.addEventListener('change', function() {
@@ -3002,41 +3029,85 @@ function displayCostCompositionChart(compositionData) {
     chart.setOption(option);
 }
 
-// 成本率分布图
+// 全局变量存储成本率分布数据
+let globalCostRateData = null;
+
+// 全局过滤状态管理
+let globalFilterState = {
+    costRateInterval: null,  // 当前选中的成本率区间
+    activeFilters: new Set() // 活跃的过滤器集合
+};
+
+// 成本率分布图 - 升级版
 function displayCostRateChart(rateData) {
+    globalCostRateData = rateData;
+
     const chartContainer = document.getElementById('costRateChart');
     const chart = echarts.init(chartContainer);
     chartInstances['costRateChart'] = chart;
 
-    const categories = rateData.distribution_data.map(item => item.interval);
-    const values = rateData.distribution_data.map(item => item.count);
+    // 检查数据结构，如果有问题则使用简单版本
+    if (!rateData || !rateData.division_methods || !Array.isArray(rateData.division_methods) || rateData.division_methods.length === 0) {
+        console.warn('成本率数据结构异常，使用简单版本');
+        displaySimpleCostRateChart(chart, rateData);
+        return;
+    }
+
+    // 初始化控制面板
+    initializeCostRateControls(rateData);
+
+    // 使用默认设置渲染图表
+    renderCostRateChart(chart, rateData, 'count', 0, false);
+
+    // 添加点击事件实现下钻功能和交互联动
+    chart.on('click', function(params) {
+        if (params.componentType === 'series') {
+            const intervalName = params.name;
+
+            // 检查是否按住Ctrl键（Mac上是Cmd键）进行过滤联动
+            if (params.event && (params.event.event.ctrlKey || params.event.event.metaKey)) {
+                toggleCostRateFilter(intervalName);
+            } else {
+                // 普通点击显示详细信息
+                showCostRateIntervalDetails(intervalName, rateData);
+            }
+        }
+    });
+}
+
+// 简单版本的成本率分布图（fallback）
+function displaySimpleCostRateChart(chart, rateData) {
+    // 使用原始的distribution_data
+    const categories = rateData.distribution_data ? rateData.distribution_data.map(item => item.interval) : [];
+    const values = rateData.distribution_data ? rateData.distribution_data.map(item => item.count) : [];
+
+    if (categories.length === 0) {
+        // 如果连基础数据都没有，显示空图表
+        chart.setOption({
+            title: {
+                text: '暂无成本率数据',
+                left: 'center',
+                top: 'middle',
+                textStyle: { color: '#999' }
+            }
+        });
+        return;
+    }
 
     const option = {
         tooltip: {
             trigger: 'axis',
-            axisPointer: {
-                type: 'shadow'
-            },
+            axisPointer: { type: 'shadow' },
             formatter: function(params) {
                 const data = rateData.distribution_data[params[0].dataIndex];
-                let tooltip = `${params[0].name}<br/>数量: ${data.count}<br/>占比: ${data.percentage}%`;
-
-                // 如果有区间信息，显示更多详情
-                if (rateData.intervals_info) {
-                    tooltip += `<br/><span style="color: #666; font-size: 12px;">点击查看详细项目列表</span>`;
-                }
-
-                return tooltip;
+                return `${params[0].name}<br/>数量: ${data.count}<br/>占比: ${data.percentage}%`;
             }
         },
         xAxis: {
             type: 'category',
             data: categories,
             name: '成本率区间',
-            axisLabel: {
-                rotate: 45,  // 旋转标签避免重叠
-                fontSize: 12
-            }
+            axisLabel: { rotate: 45, fontSize: 12 }
         },
         yAxis: {
             type: 'value',
@@ -3056,13 +3127,762 @@ function displayCostRateChart(rateData) {
 
     chart.setOption(option);
 
-    // 添加点击事件实现下钻功能
+    // 添加简单的点击事件
     chart.on('click', function(params) {
         if (params.componentType === 'series') {
             const intervalName = params.name;
-            showCostRateIntervalDetails(intervalName, rateData);
+            if (rateData.interval_details && rateData.interval_details[intervalName]) {
+                showCostRateIntervalDetails(intervalName, rateData);
+            }
         }
     });
+}
+
+// 初始化成本率分布图控制面板
+function initializeCostRateControls(rateData) {
+    // 初始化Y轴指标选择器
+    const yAxisSelect = document.getElementById('costRateYAxis');
+    const divisionSelect = document.getElementById('costRateDivision');
+    const stackModeCheckbox = document.getElementById('costRateStackMode');
+
+    if (!yAxisSelect || !divisionSelect || !stackModeCheckbox) {
+        console.error('成本率控制面板元素未找到');
+        return;
+    }
+
+    // 清空并填充Y轴选项
+    yAxisSelect.innerHTML = '';
+    if (rateData && rateData.value_fields && Array.isArray(rateData.value_fields)) {
+        rateData.value_fields.forEach(field => {
+            const option = document.createElement('option');
+            option.value = field.key;
+            option.textContent = `${field.name} (${field.unit})`;
+            yAxisSelect.appendChild(option);
+        });
+    } else {
+        // 添加默认选项
+        const defaultOption = document.createElement('option');
+        defaultOption.value = 'count';
+        defaultOption.textContent = '项目数量 (个)';
+        yAxisSelect.appendChild(defaultOption);
+    }
+
+    // 清空并填充区间划分选项
+    divisionSelect.innerHTML = '';
+    if (rateData && rateData.division_methods && Array.isArray(rateData.division_methods)) {
+        rateData.division_methods.forEach((method, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = method.method_name || `方法 ${index + 1}`;
+            divisionSelect.appendChild(option);
+        });
+    } else {
+        // 添加默认选项
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '0';
+        defaultOption.textContent = '默认划分';
+        divisionSelect.appendChild(defaultOption);
+    }
+
+    // 添加事件监听器
+    yAxisSelect.addEventListener('change', updateCostRateChart);
+    divisionSelect.addEventListener('change', updateCostRateChart);
+    stackModeCheckbox.addEventListener('change', updateCostRateChart);
+
+    // 初始状态：只有利润字段才显示堆叠模式选项
+    updateStackModeVisibility();
+}
+
+// 更新堆叠模式可见性
+function updateStackModeVisibility() {
+    const yAxisSelect = document.getElementById('costRateYAxis');
+    const stackModeGroup = document.getElementById('costRateStackMode').closest('.control-group');
+
+    if (yAxisSelect.value === 'profit') {
+        stackModeGroup.style.display = 'flex';
+    } else {
+        stackModeGroup.style.display = 'none';
+        document.getElementById('costRateStackMode').checked = false;
+    }
+}
+
+// 更新成本率分布图
+function updateCostRateChart() {
+    if (!globalCostRateData) return;
+
+    const yAxisValue = document.getElementById('costRateYAxis').value;
+    const divisionIndex = parseInt(document.getElementById('costRateDivision').value);
+    const stackMode = document.getElementById('costRateStackMode').checked;
+
+    // 更新堆叠模式可见性
+    updateStackModeVisibility();
+
+    const chart = chartInstances['costRateChart'];
+    if (chart) {
+        renderCostRateChart(chart, globalCostRateData, yAxisValue, divisionIndex, stackMode);
+    }
+}
+
+// 渲染成本率分布图的核心函数
+function renderCostRateChart(chart, rateData, yAxisField, divisionIndex, stackMode) {
+    // 安全检查
+    if (!rateData || !rateData.division_methods || !Array.isArray(rateData.division_methods)) {
+        console.error('成本率数据结构错误:', rateData);
+        return;
+    }
+
+    // 获取当前选择的划分方法数据
+    const currentMethod = rateData.division_methods[divisionIndex];
+    if (!currentMethod) {
+        console.error('无法找到划分方法:', divisionIndex, rateData.division_methods);
+        return;
+    }
+
+    // 安全检查分布数据
+    if (!currentMethod.distribution_data || !Array.isArray(currentMethod.distribution_data)) {
+        console.error('分布数据结构错误:', currentMethod);
+        return;
+    }
+
+    const categories = currentMethod.distribution_data.map(item => item.interval);
+    const valueData = currentMethod.value_distribution_data && currentMethod.value_distribution_data[yAxisField];
+
+    if (!valueData || !Array.isArray(valueData)) {
+        console.error('价值数据不存在或格式错误:', yAxisField, currentMethod.value_distribution_data);
+        return;
+    }
+
+    // 获取Y轴字段信息
+    const fieldInfo = rateData.value_fields && rateData.value_fields.find(f => f.key === yAxisField);
+    const yAxisName = fieldInfo ? `${fieldInfo.name} (${fieldInfo.unit})` : 'Value';
+
+    let series = [];
+
+    if (stackMode && yAxisField === 'profit' && valueData[0].profit_value !== undefined) {
+        // 堆叠模式：显示盈利和亏损分布
+        const profitValues = valueData.map(item => item.profit_value || 0);
+        const lossValues = valueData.map(item => item.loss_value || 0);
+
+        series = [
+            {
+                name: '盈利',
+                type: 'bar',
+                stack: 'profit_loss',
+                data: profitValues,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#4CAF50' },
+                        { offset: 1, color: '#2E7D32' }
+                    ])
+                }
+            },
+            {
+                name: '亏损',
+                type: 'bar',
+                stack: 'profit_loss',
+                data: lossValues.map(v => -v), // 负值显示
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#F44336' },
+                        { offset: 1, color: '#C62828' }
+                    ])
+                }
+            }
+        ];
+    } else {
+        // 普通模式：单一指标
+        const values = valueData.map(item => item.value);
+
+        // 根据不同指标选择颜色
+        let colorGradient;
+        switch (yAxisField) {
+            case 'count':
+                colorGradient = [
+                    { offset: 0, color: '#ffc107' },
+                    { offset: 1, color: '#fd7e14' }
+                ];
+                break;
+            case 'amount':
+                colorGradient = [
+                    { offset: 0, color: '#2196F3' },
+                    { offset: 1, color: '#1976D2' }
+                ];
+                break;
+            case 'profit':
+                colorGradient = [
+                    { offset: 0, color: '#4CAF50' },
+                    { offset: 1, color: '#2E7D32' }
+                ];
+                break;
+            case 'total_cost':
+                colorGradient = [
+                    { offset: 0, color: '#FF9800' },
+                    { offset: 1, color: '#F57C00' }
+                ];
+                break;
+            default:
+                colorGradient = [
+                    { offset: 0, color: '#9C27B0' },
+                    { offset: 1, color: '#7B1FA2' }
+                ];
+        }
+
+        series = [{
+            type: 'bar',
+            data: values,
+            itemStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, colorGradient)
+            }
+        }];
+    }
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow'
+            },
+            formatter: function(params) {
+                const dataIndex = params[0].dataIndex;
+                const intervalData = valueData[dataIndex];
+
+                let tooltip = `<strong>${params[0].name}</strong><br/>`;
+
+                if (stackMode && yAxisField === 'profit') {
+                    tooltip += `盈利: ${intervalData.profit_value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                    tooltip += `亏损: ${intervalData.loss_value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                    tooltip += `净利润: ${intervalData.value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                } else {
+                    tooltip += `${fieldInfo.name}: ${intervalData.value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                }
+
+                tooltip += `占比: ${intervalData.percentage?.toFixed(1) || 0}%<br/>`;
+                tooltip += `<span style="color: #666; font-size: 12px;">点击查看详细项目列表</span>`;
+
+                return tooltip;
+            }
+        },
+        legend: stackMode && yAxisField === 'profit' ? {
+            data: ['盈利', '亏损'],
+            top: 10
+        } : undefined,
+        xAxis: {
+            type: 'category',
+            data: categories,
+            name: '成本率区间',
+            axisLabel: {
+                rotate: 45,
+                fontSize: 12
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: yAxisName,
+            axisLabel: {
+                formatter: function(value) {
+                    if (Math.abs(value) >= 10000) {
+                        return (value / 10000).toFixed(1) + '万';
+                    }
+                    return value.toFixed(0);
+                }
+            }
+        },
+        series: series,
+        grid: {
+            top: stackMode && yAxisField === 'profit' ? 60 : 40,
+            left: 80,
+            right: 40,
+            bottom: 80
+        }
+    };
+
+    chart.setOption(option, true);
+}
+
+// 切换成本率区间过滤器
+function toggleCostRateFilter(intervalName) {
+    if (globalFilterState.costRateInterval === intervalName) {
+        // 取消过滤
+        clearCostRateFilter();
+    } else {
+        // 应用过滤
+        applyCostRateFilter(intervalName);
+    }
+}
+
+// 应用成本率区间过滤
+function applyCostRateFilter(intervalName) {
+    globalFilterState.costRateInterval = intervalName;
+    globalFilterState.activeFilters.add('costRate');
+
+    // 更新成本率分布图的视觉反馈
+    updateCostRateChartSelection(intervalName);
+
+    // 过滤其他图表
+    filterOtherCharts();
+
+    // 显示过滤状态提示
+    showFilterStatus();
+}
+
+// 清除成本率过滤
+function clearCostRateFilter() {
+    globalFilterState.costRateInterval = null;
+    globalFilterState.activeFilters.delete('costRate');
+
+    // 清除成本率分布图的选中状态
+    updateCostRateChartSelection(null);
+
+    // 恢复其他图表
+    filterOtherCharts();
+
+    // 隐藏过滤状态提示
+    hideFilterStatus();
+}
+
+// 更新成本率分布图的选中状态
+function updateCostRateChartSelection(selectedInterval) {
+    const chart = chartInstances['costRateChart'];
+    if (!chart || !globalCostRateData) return;
+
+    const yAxisValue = document.getElementById('costRateYAxis').value;
+    const divisionIndex = parseInt(document.getElementById('costRateDivision').value);
+    const stackMode = document.getElementById('costRateStackMode').checked;
+
+    // 重新渲染图表，高亮选中的区间
+    renderCostRateChartWithSelection(chart, globalCostRateData, yAxisValue, divisionIndex, stackMode, selectedInterval);
+}
+
+// 带选中状态的成本率分布图渲染
+function renderCostRateChartWithSelection(chart, rateData, yAxisField, divisionIndex, stackMode, selectedInterval) {
+    // 安全检查
+    if (!rateData || !rateData.division_methods || !Array.isArray(rateData.division_methods)) {
+        console.error('成本率数据结构错误:', rateData);
+        return;
+    }
+
+    const currentMethod = rateData.division_methods[divisionIndex];
+    if (!currentMethod || !currentMethod.distribution_data || !currentMethod.value_distribution_data) {
+        console.error('划分方法数据错误:', divisionIndex, currentMethod);
+        return;
+    }
+
+    const categories = currentMethod.distribution_data.map(item => item.interval);
+    const valueData = currentMethod.value_distribution_data[yAxisField];
+
+    if (!valueData || !Array.isArray(valueData)) {
+        console.error('价值数据错误:', yAxisField, valueData);
+        return;
+    }
+
+    const fieldInfo = rateData.value_fields && rateData.value_fields.find(f => f.key === yAxisField);
+    const yAxisName = fieldInfo ? `${fieldInfo.name} (${fieldInfo.unit})` : 'Value';
+
+    let series = [];
+
+    if (stackMode && yAxisField === 'profit' && valueData[0].profit_value !== undefined) {
+        // 堆叠模式
+        const profitValues = valueData.map((item, index) => ({
+            value: item.profit_value || 0,
+            itemStyle: categories[index] === selectedInterval ? {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#66BB6A' },
+                    { offset: 1, color: '#388E3C' }
+                ]),
+                borderColor: '#FF5722',
+                borderWidth: 3
+            } : undefined
+        }));
+
+        const lossValues = valueData.map((item, index) => ({
+            value: -(item.loss_value || 0),
+            itemStyle: categories[index] === selectedInterval ? {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#EF5350' },
+                    { offset: 1, color: '#D32F2F' }
+                ]),
+                borderColor: '#FF5722',
+                borderWidth: 3
+            } : undefined
+        }));
+
+        series = [
+            {
+                name: '盈利',
+                type: 'bar',
+                stack: 'profit_loss',
+                data: profitValues,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#4CAF50' },
+                        { offset: 1, color: '#2E7D32' }
+                    ])
+                }
+            },
+            {
+                name: '亏损',
+                type: 'bar',
+                stack: 'profit_loss',
+                data: lossValues,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#F44336' },
+                        { offset: 1, color: '#C62828' }
+                    ])
+                }
+            }
+        ];
+    } else {
+        // 普通模式
+        const values = valueData.map((item, index) => ({
+            value: item.value,
+            itemStyle: categories[index] === selectedInterval ? {
+                borderColor: '#FF5722',
+                borderWidth: 3,
+                shadowColor: 'rgba(255, 87, 34, 0.5)',
+                shadowBlur: 10
+            } : undefined
+        }));
+
+        let colorGradient;
+        switch (yAxisField) {
+            case 'count':
+                colorGradient = [{ offset: 0, color: '#ffc107' }, { offset: 1, color: '#fd7e14' }];
+                break;
+            case 'amount':
+                colorGradient = [{ offset: 0, color: '#2196F3' }, { offset: 1, color: '#1976D2' }];
+                break;
+            case 'profit':
+                colorGradient = [{ offset: 0, color: '#4CAF50' }, { offset: 1, color: '#2E7D32' }];
+                break;
+            case 'total_cost':
+                colorGradient = [{ offset: 0, color: '#FF9800' }, { offset: 1, color: '#F57C00' }];
+                break;
+            default:
+                colorGradient = [{ offset: 0, color: '#9C27B0' }, { offset: 1, color: '#7B1FA2' }];
+        }
+
+        series = [{
+            type: 'bar',
+            data: values,
+            itemStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, colorGradient)
+            }
+        }];
+    }
+
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: function(params) {
+                const dataIndex = params[0].dataIndex;
+                const intervalData = valueData[dataIndex];
+
+                let tooltip = `<strong>${params[0].name}</strong><br/>`;
+
+                if (stackMode && yAxisField === 'profit') {
+                    tooltip += `盈利: ${intervalData.profit_value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                    tooltip += `亏损: ${intervalData.loss_value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                    tooltip += `净利润: ${intervalData.value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                } else {
+                    tooltip += `${fieldInfo.name}: ${intervalData.value?.toFixed(0) || 0} ${fieldInfo.unit}<br/>`;
+                }
+
+                tooltip += `占比: ${intervalData.percentage?.toFixed(1) || 0}%<br/>`;
+                tooltip += `<span style="color: #666; font-size: 12px;">点击查看详情 | Ctrl+点击过滤其他图表</span>`;
+
+                return tooltip;
+            }
+        },
+        legend: stackMode && yAxisField === 'profit' ? {
+            data: ['盈利', '亏损'],
+            top: 10
+        } : undefined,
+        xAxis: {
+            type: 'category',
+            data: categories,
+            name: '成本率区间',
+            axisLabel: { rotate: 45, fontSize: 12 }
+        },
+        yAxis: {
+            type: 'value',
+            name: yAxisName,
+            axisLabel: {
+                formatter: function(value) {
+                    if (Math.abs(value) >= 10000) {
+                        return (value / 10000).toFixed(1) + '万';
+                    }
+                    return value.toFixed(0);
+                }
+            }
+        },
+        series: series,
+        grid: {
+            top: stackMode && yAxisField === 'profit' ? 60 : 40,
+            left: 80,
+            right: 40,
+            bottom: 80
+        }
+    };
+
+    chart.setOption(option, true);
+}
+
+// 过滤其他图表
+function filterOtherCharts() {
+    if (!globalFilterState.costRateInterval) {
+        // 没有过滤条件，恢复所有图表
+        restoreAllCharts();
+        return;
+    }
+
+    // 安全检查全局数据
+    if (!globalCostRateData || !globalCostRateData.division_methods || !Array.isArray(globalCostRateData.division_methods)) {
+        console.error('全局成本率数据无效');
+        return;
+    }
+
+    // 获取当前选中区间的项目列表
+    const divisionIndex = parseInt(document.getElementById('costRateDivision').value) || 0;
+    const currentMethod = globalCostRateData.division_methods[divisionIndex];
+
+    if (!currentMethod || !currentMethod.interval_details) {
+        console.error('无法获取区间详情数据');
+        return;
+    }
+
+    const filteredItems = currentMethod.interval_details[globalFilterState.costRateInterval];
+
+    if (!filteredItems || filteredItems.length === 0) {
+        console.warn('选中区间没有项目数据');
+        return;
+    }
+
+    // 提取过滤项目的名称列表
+    const filteredItemNames = new Set(filteredItems.map(item => item.name));
+
+    // 过滤成本效率散点图
+    filterCostEfficiencyChart(filteredItemNames);
+
+    // 过滤成本构成图
+    filterCostCompositionChart(filteredItemNames);
+
+    // 过滤帕累托图（如果存在）
+    filterParetoChart(filteredItemNames);
+}
+
+// 过滤成本效率散点图
+function filterCostEfficiencyChart(filteredItemNames) {
+    const chart = chartInstances['costEfficiencyChart'];
+    if (!chart) return;
+
+    const option = chart.getOption();
+    if (!option.series || !option.series[0] || !option.series[0].data) return;
+
+    // 更新散点图数据，高亮过滤的项目
+    const updatedData = option.series[0].data.map(point => {
+        const itemName = point[2].name;
+        const isFiltered = filteredItemNames.has(itemName);
+
+        return [
+            point[0], // x值
+            point[1], // y值
+            {
+                ...point[2],
+                itemStyle: isFiltered ? {
+                    color: '#FF5722',
+                    borderColor: '#FF5722',
+                    borderWidth: 2,
+                    shadowColor: 'rgba(255, 87, 34, 0.6)',
+                    shadowBlur: 8
+                } : {
+                    color: '#CCCCCC',
+                    opacity: 0.3
+                },
+                symbolSize: isFiltered ? 12 : 6
+            }
+        ];
+    });
+
+    chart.setOption({
+        series: [{
+            ...option.series[0],
+            data: updatedData
+        }]
+    });
+}
+
+// 过滤成本构成图
+function filterCostCompositionChart(filteredItemNames) {
+    const chart = chartInstances['costCompositionChart'];
+    if (!chart) return;
+
+    // 成本构成图通常是饼图，显示聚合数据，这里可以添加标题提示
+    const option = chart.getOption();
+    chart.setOption({
+        title: {
+            text: `成本构成分析 (已过滤: ${filteredItemNames.size}项)`,
+            left: 'center',
+            textStyle: {
+                color: '#FF5722',
+                fontSize: 14
+            }
+        }
+    });
+}
+
+// 过滤帕累托图
+function filterParetoChart(filteredItemNames) {
+    const chart = chartInstances['paretoChart'];
+    if (!chart) return;
+
+    const option = chart.getOption();
+    if (!option.series || !option.series[0] || !option.series[0].data) return;
+
+    // 高亮帕累托图中的过滤项目
+    const updatedBarData = option.series[0].data.map((value, index) => {
+        const categoryName = option.xAxis[0].data[index];
+        const isFiltered = filteredItemNames.has(categoryName);
+
+        return {
+            value: value,
+            itemStyle: isFiltered ? {
+                color: '#FF5722',
+                borderColor: '#FF5722',
+                borderWidth: 2
+            } : {
+                color: '#CCCCCC',
+                opacity: 0.3
+            }
+        };
+    });
+
+    chart.setOption({
+        series: [
+            {
+                ...option.series[0],
+                data: updatedBarData
+            },
+            option.series[1] // 保持累计百分比线不变
+        ]
+    });
+}
+
+// 恢复所有图表
+function restoreAllCharts() {
+    // 恢复成本效率散点图
+    const efficiencyChart = chartInstances['costEfficiencyChart'];
+    if (efficiencyChart) {
+        const option = efficiencyChart.getOption();
+        if (option.series && option.series[0] && option.series[0].data) {
+            const restoredData = option.series[0].data.map(point => [
+                point[0],
+                point[1],
+                {
+                    ...point[2],
+                    itemStyle: {
+                        color: function(params) {
+                            const quadrant = params.data[2].quadrant;
+                            const colors = {
+                                'efficient': '#4CAF50',
+                                'low_volume': '#2196F3',
+                                'high_cost': '#FF9800',
+                                'inefficient': '#F44336'
+                            };
+                            return colors[quadrant] || '#666';
+                        }
+                    },
+                    symbolSize: 8
+                }
+            ]);
+
+            efficiencyChart.setOption({
+                series: [{
+                    ...option.series[0],
+                    data: restoredData
+                }]
+            });
+        }
+    }
+
+    // 恢复成本构成图标题
+    const compositionChart = chartInstances['costCompositionChart'];
+    if (compositionChart) {
+        compositionChart.setOption({
+            title: {
+                text: '成本构成分析',
+                left: 'center',
+                textStyle: {
+                    color: '#333',
+                    fontSize: 16
+                }
+            }
+        });
+    }
+
+    // 恢复帕累托图
+    const paretoChart = chartInstances['paretoChart'];
+    if (paretoChart) {
+        const option = paretoChart.getOption();
+        if (option.series && option.series[0] && option.series[0].data) {
+            const restoredBarData = option.series[0].data.map(value => ({
+                value: typeof value === 'object' ? value.value : value,
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#4CAF50' },
+                        { offset: 1, color: '#2E7D32' }
+                    ])
+                }
+            }));
+
+            paretoChart.setOption({
+                series: [
+                    {
+                        ...option.series[0],
+                        data: restoredBarData
+                    },
+                    option.series[1]
+                ]
+            });
+        }
+    }
+}
+
+// 显示过滤状态
+function showFilterStatus() {
+    let statusContainer = document.getElementById('filterStatus');
+
+    if (!statusContainer) {
+        // 创建过滤状态容器
+        statusContainer = document.createElement('div');
+        statusContainer.id = 'filterStatus';
+        statusContainer.className = 'filter-status-container';
+
+        // 插入到成本率分布图容器的顶部
+        const costRateContainer = document.getElementById('costRateChart').closest('.chart-container');
+        costRateContainer.insertBefore(statusContainer, costRateContainer.firstChild);
+    }
+
+    // 更新状态内容
+    const intervalName = globalFilterState.costRateInterval;
+    statusContainer.innerHTML = `
+        <div class="filter-status-badge">
+            <span class="filter-icon">🔍</span>
+            <span class="filter-text">已过滤成本率区间: <strong>${intervalName}</strong></span>
+            <button class="filter-clear-btn" onclick="clearCostRateFilter()">✕ 清除过滤</button>
+        </div>
+    `;
+
+    statusContainer.style.display = 'block';
+}
+
+// 隐藏过滤状态
+function hideFilterStatus() {
+    const statusContainer = document.getElementById('filterStatus');
+    if (statusContainer) {
+        statusContainer.style.display = 'none';
+    }
 }
 
 // 成本效率散点图
@@ -3200,12 +4020,27 @@ function initializeLayoutAnalysisTools() {
     console.log('Layout analysis tools initialized');
 }
 
-// 显示成本率区间详细信息的下钻功能
+// 显示成本率区间详细信息的下钻功能 - 升级版
 function showCostRateIntervalDetails(intervalName, rateData) {
-    // 检查是否有详情数据
-    const details = rateData.interval_details && rateData.interval_details[intervalName];
+    // 安全检查数据结构
+    if (!rateData || !rateData.division_methods || !Array.isArray(rateData.division_methods)) {
+        alert('数据结构错误，无法显示详细信息');
+        return;
+    }
 
-    if (!details || details.length === 0) {
+    // 获取当前选择的划分方法
+    const divisionIndex = parseInt(document.getElementById('costRateDivision').value) || 0;
+    const currentMethod = rateData.division_methods[divisionIndex];
+
+    if (!currentMethod) {
+        alert('无法获取当前划分方法数据');
+        return;
+    }
+
+    // 检查是否有详情数据
+    const details = currentMethod.interval_details && currentMethod.interval_details[intervalName];
+
+    if (!details || !Array.isArray(details) || details.length === 0) {
         alert('该成本率区间暂无详细数据');
         return;
     }

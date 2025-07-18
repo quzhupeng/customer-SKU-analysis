@@ -185,7 +185,34 @@
                             <div id="costCompositionChart" class="chart"></div>
                         </div>
                         <div class="chart-container">
-                            <h4>成本率分布</h4>
+                            <div class="chart-header">
+                                <h4>成本率分布</h4>
+                                <div class="chart-controls">
+                                    <div class="control-group">
+                                        <label for="costRateYAxis">Y轴指标:</label>
+                                        <select id="costRateYAxis" class="control-select">
+                                            <option value="count">项目数量</option>
+                                            <option value="amount">销售额总和</option>
+                                            <option value="profit">利润总和</option>
+                                            <option value="total_cost">总成本</option>
+                                        </select>
+                                    </div>
+                                    <div class="control-group">
+                                        <label for="costRateDivision">区间划分:</label>
+                                        <select id="costRateDivision" class="control-select">
+                                            <option value="0">等频划分（推荐）</option>
+                                            <option value="1">等宽划分</option>
+                                            <option value="2">标准区间</option>
+                                        </select>
+                                    </div>
+                                    <div class="control-group">
+                                        <label>
+                                            <input type="checkbox" id="costRateStackMode" />
+                                            堆叠模式（盈亏分布）
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                             <div id="costRateChart" class="chart"></div>
                         </div>
                     </div>
@@ -202,9 +229,9 @@
             <div class="data-table-container">
                 <h3>明细数据</h3>
                 <div class="table-controls">
-                    <input type="text" id="searchInput" placeholder="搜索..." class="search-input">
+                    <input type="text" id="searchInput" placeholder="搜索产品名称、客户名称或地区..." class="search-input">
                     <select id="filterSelect" class="filter-select">
-                        <option value="">全部</option>
+                        <option value="">全部象限</option>
                     </select>
                 </div>
                 <div class="table-wrapper">

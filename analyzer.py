@@ -373,9 +373,8 @@ class DataAnalyzer:
         # 获取象限信息
         quadrant_info = get_quadrant_info(analysis_type)
 
-        # 为每个数据点添加象限名称和策略
+        # 为每个数据点添加象限名称
         data['象限名称'] = data['象限'].map(lambda q: quadrant_info[q]['name'])
-        data['建议策略'] = data['象限'].map(lambda q: quadrant_info[q]['strategy'])
 
         # 计算总体统计数据
         total_count = len(data)
@@ -1001,44 +1000,209 @@ class DataAnalyzer:
         }
 
     def _cost_rate_distribution(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """成本率分布分析 - 动态区间划分版本"""
+        """成本率分布分析 - 升级版：支持多维度价值分析和动态区间划分"""
         cost_rates = data['成本率'].dropna()
 
         if len(cost_rates) == 0:
             return {
                 'distribution_data': [],
+                'value_distribution_data': [],
                 'avg_cost_rate': 0,
                 'median_cost_rate': 0,
-                'interval_details': {}
+                'interval_details': {},
+                'division_methods': []
             }
 
-        # 动态计算区间：优先使用四分位数，但确保合理的区间数量
+        # 获取可用的价值字段
+        value_fields = self._get_available_value_fields(data)
+
+        # 动态计算区间：支持多种划分方法
+        intervals_config = self._calculate_dynamic_intervals(cost_rates)
+
+        # 为每种区间划分方法生成数据
+        division_methods = []
+        for method_name, intervals_data in intervals_config.items():
+            intervals = intervals_data['intervals']
+            labels = intervals_data['labels']
+
+            # 创建区间分组
+            cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False, include_lowest=True)
+
+            # 统计各区间的多维度数据
+            distribution_data, value_distribution_data, interval_details = self._calculate_interval_statistics(
+                data, cost_rate_intervals, value_fields, intervals_data['method_type']
+            )
+
+            division_methods.append({
+                'method_name': method_name,
+                'method_type': intervals_data['method_type'],
+                'description': intervals_data['description'],
+                'distribution_data': distribution_data,
+                'value_distribution_data': value_distribution_data,
+                'interval_details': interval_details,
+                'intervals_info': {
+                    'intervals': intervals,
+                    'labels': labels,
+                    'range': f'{cost_rates.min():.1%} - {cost_rates.max():.1%}'
+                }
+            })
+
+        # 如果没有生成任何划分方法，创建一个默认的
+        if not division_methods:
+            # 创建一个简单的默认划分
+            default_intervals = [0, 0.5, 1.0]
+            default_labels = ['<50%', '≥50%']
+
+            try:
+                cost_rate_intervals = pd.cut(cost_rates, bins=default_intervals, labels=default_labels, right=False, include_lowest=True)
+                distribution_data, value_distribution_data, interval_details = self._calculate_interval_statistics(
+                    data, cost_rate_intervals, value_fields, 'default'
+                )
+
+                division_methods.append({
+                    'method_name': '默认划分',
+                    'method_type': 'default',
+                    'description': '简单的二分法划分',
+                    'distribution_data': distribution_data,
+                    'value_distribution_data': value_distribution_data,
+                    'interval_details': interval_details,
+                    'intervals_info': {
+                        'intervals': default_intervals,
+                        'labels': default_labels,
+                        'range': f'{cost_rates.min():.1%} - {cost_rates.max():.1%}'
+                    }
+                })
+            except Exception as e:
+                print(f"创建默认划分失败: {e}")
+                # 如果连默认划分都失败，返回空数据
+                return {
+                    'distribution_data': [],
+                    'value_distribution_data': {field['key']: [] for field in value_fields},
+                    'avg_cost_rate': float(cost_rates.mean()),
+                    'median_cost_rate': float(cost_rates.median()),
+                    'interval_details': {},
+                    'division_methods': [],
+                    'value_fields': value_fields,
+                    'intervals_info': {}
+                }
+
+        # 默认使用第一种方法
+        default_method = division_methods[0]
+
+        return {
+            'distribution_data': default_method['distribution_data'],
+            'value_distribution_data': default_method['value_distribution_data'],
+            'avg_cost_rate': float(cost_rates.mean()),
+            'median_cost_rate': float(cost_rates.median()),
+            'interval_details': default_method['interval_details'],
+            'division_methods': division_methods,
+            'value_fields': value_fields,
+            'intervals_info': default_method.get('intervals_info', {})
+        }
+
+    def _get_available_value_fields(self, data: pd.DataFrame):
+        """获取可用的价值字段配置"""
+        value_fields = [
+            {
+                'key': 'count',
+                'name': '项目数量',
+                'unit': '个',
+                'description': '落入该成本率区间的项目数量'
+            }
+        ]
+
+        # 销售额字段
+        if 'amount' in self.field_mapping:
+            value_fields.append({
+                'key': 'amount',
+                'name': '销售额总和',
+                'unit': '万元',
+                'description': '该区间内所有项目的销售额总和',
+                'column': self.field_mapping['amount']
+            })
+
+        # 利润字段
+        if 'profit' in self.field_mapping:
+            value_fields.append({
+                'key': 'profit',
+                'name': '利润总和',
+                'unit': '万元',
+                'description': '该区间内所有项目的利润总和',
+                'column': self.field_mapping['profit']
+            })
+
+        # 总成本字段
+        if '总成本' in data.columns:
+            value_fields.append({
+                'key': 'total_cost',
+                'name': '总成本',
+                'unit': '万元',
+                'description': '该区间内所有项目的总成本',
+                'column': '总成本'
+            })
+
+        return value_fields
+
+    def _calculate_dynamic_intervals(self, cost_rates: pd.Series):
+        """计算多种动态区间划分方法"""
         min_rate = cost_rates.min()
         max_rate = cost_rates.max()
 
-        # 如果数据范围很小，使用固定的小区间
-        if max_rate - min_rate < 0.1:  # 范围小于10%
-            # 使用较小的固定区间
-            center = (min_rate + max_rate) / 2
-            intervals = [0, center - 0.05, center, center + 0.05, 1.0]
-            intervals = [max(0, min(1, x)) for x in intervals]  # 确保在[0,1]范围内
-            intervals = sorted(list(set(intervals)))  # 去重并排序
-        else:
-            # 使用四分位数进行动态划分
+        intervals_config = {}
+
+        # 1. 等频划分（四分位数）- 推荐方法
+        if max_rate - min_rate >= 0.1:  # 数据范围足够大
             q25 = cost_rates.quantile(0.25)
-            q50 = cost_rates.quantile(0.50)  # 中位数
+            q50 = cost_rates.quantile(0.50)
             q75 = cost_rates.quantile(0.75)
-
-            # 构建区间，确保覆盖所有数据
             intervals = [0, q25, q50, q75, 1.0]
-
-            # 去除重复值并确保至少有2个区间
             intervals = sorted(list(set(intervals)))
-            if len(intervals) < 3:  # 至少需要3个边界点形成2个区间
-                # 如果四分位数重复太多，回退到等距划分
-                intervals = [0, 0.25, 0.5, 0.75, 1.0]
 
-        # 生成标签
+            if len(intervals) >= 3:  # 确保有足够的区间
+                labels = self._generate_interval_labels(intervals)
+                intervals_config['等频划分（推荐）'] = {
+                    'intervals': intervals,
+                    'labels': labels,
+                    'method_type': 'quartile',
+                    'description': '基于四分位数划分，确保每个区间包含大致相同数量的项目'
+                }
+
+        # 2. 等宽划分
+        interval_width = (max_rate - min_rate) / 5  # 分为5个等宽区间
+        intervals = [min_rate + i * interval_width for i in range(6)]
+        intervals[0] = 0  # 起始点设为0
+        intervals[-1] = 1.0  # 结束点设为1
+        labels = self._generate_interval_labels(intervals)
+
+        intervals_config['等宽划分'] = {
+            'intervals': intervals,
+            'labels': labels,
+            'method_type': 'equal_width',
+            'description': '将成本率范围均匀分为5个等宽区间'
+        }
+
+        # 3. 标准区间（原有的固定区间）
+        standard_intervals = [0, 0.3, 0.5, 0.7, 0.8, 1.0]
+        standard_labels = ['<30%', '30-50%', '50-70%', '70-80%', '>80%']
+
+        intervals_config['标准区间'] = {
+            'intervals': standard_intervals,
+            'labels': standard_labels,
+            'method_type': 'standard',
+            'description': '使用标准的成本率区间划分'
+        }
+
+        # 如果等频划分失败，确保至少有等宽划分
+        if '等频划分（推荐）' not in intervals_config:
+            # 将等宽划分设为推荐
+            intervals_config = {'等宽划分（推荐）': intervals_config['等宽划分']} | intervals_config
+            intervals_config['等宽划分（推荐）']['description'] = '数据分布较集中时的推荐划分方法'
+            del intervals_config['等宽划分']
+
+        return intervals_config
+
+    def _generate_interval_labels(self, intervals):
+        """生成区间标签"""
         labels = []
         for i in range(len(intervals) - 1):
             start_pct = int(intervals[i] * 100)
@@ -1047,61 +1211,106 @@ class DataAnalyzer:
                 labels.append(f'>{start_pct}%')
             else:
                 labels.append(f'{start_pct}-{end_pct}%')
+        return labels
 
-        # 创建区间分组
-        cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False, include_lowest=True)
-
-        # 统计各区间数据
+    def _calculate_interval_statistics(self, data: pd.DataFrame, cost_rate_intervals: pd.Series,
+                                     value_fields, method_type: str):
+        """计算区间统计数据，支持多维度价值分析"""
         interval_stats = cost_rate_intervals.value_counts().sort_index()
+        group_column = self._get_group_column('product')
 
-        # 准备分布数据和详细信息
         distribution_data = []
+        value_distribution_data = {}
         interval_details = {}
-        group_column = self._get_group_column('product')  # 成本分析主要用于产品分析
+
+        # 初始化价值分布数据结构
+        for field in value_fields:
+            value_distribution_data[field['key']] = []
 
         for interval, count in interval_stats.items():
-            distribution_data.append({
-                'interval': str(interval),
-                'count': int(count),
-                'percentage': round(count / len(cost_rates) * 100, 2)
-            })
-
-            # 为下钻功能准备详细数据
             interval_name = str(interval)
             interval_mask = cost_rate_intervals == interval
             interval_data = data[interval_mask]
 
+            # 基础分布数据（项目数量）
+            distribution_item = {
+                'interval': interval_name,
+                'count': int(count),
+                'percentage': round(count / len(cost_rate_intervals) * 100, 2)
+            }
+            distribution_data.append(distribution_item)
+
+            # 价值维度分布数据
+            for field in value_fields:
+                if field['key'] == 'count':
+                    # 项目数量
+                    value_item = {
+                        'interval': interval_name,
+                        'value': int(count),
+                        'percentage': round(count / len(cost_rate_intervals) * 100, 2)
+                    }
+                else:
+                    # 其他价值字段（销售额、利润等）
+                    column = field['column']
+                    if column in interval_data.columns:
+                        total_value = interval_data[column].sum()
+
+                        # 计算盈利和亏损分布（仅对利润字段）
+                        if field['key'] == 'profit':
+                            profit_data = interval_data[column]
+                            profit_sum = profit_data[profit_data > 0].sum()
+                            loss_sum = abs(profit_data[profit_data < 0].sum())
+
+                            value_item = {
+                                'interval': interval_name,
+                                'value': round(total_value, 2),
+                                'profit_value': round(profit_sum, 2),
+                                'loss_value': round(loss_sum, 2),
+                                'percentage': round(total_value / data[column].sum() * 100, 2) if data[column].sum() != 0 else 0
+                            }
+                        else:
+                            value_item = {
+                                'interval': interval_name,
+                                'value': round(total_value, 2),
+                                'percentage': round(total_value / data[column].sum() * 100, 2) if data[column].sum() != 0 else 0
+                            }
+                    else:
+                        value_item = {
+                            'interval': interval_name,
+                            'value': 0,
+                            'percentage': 0
+                        }
+
+                value_distribution_data[field['key']].append(value_item)
+
+            # 详细数据（用于下钻）
             items = []
             for _, row in interval_data.iterrows():
                 item = {
                     'name': row[group_column],
-                    'cost_rate': round(row['成本率'], 4),  # 成本率保留4位小数
-                    'amount': round(row[self.field_mapping.get('amount', 'amount')], 2) if 'amount' in self.field_mapping else 0,
+                    'cost_rate': round(row['成本率'], 4),
                 }
+
+                # 添加所有可用的价值字段
+                for field in value_fields:
+                    if field['key'] != 'count' and 'column' in field:
+                        column = field['column']
+                        if column in row:
+                            item[field['key']] = round(row[column], 2)
+
                 # 添加其他有用字段
-                if 'profit' in self.field_mapping:
-                    item['profit'] = round(row[self.field_mapping['profit']], 2)
+                if 'amount' in self.field_mapping:
+                    item['amount'] = round(row[self.field_mapping['amount']], 2)
                 if 'quantity' in self.field_mapping:
                     item['quantity'] = round(row[self.field_mapping['quantity']], 2)
-                if '总成本' in row:
-                    item['total_cost'] = round(row['总成本'], 2)
+
                 items.append(item)
 
             # 按成本率降序排序
             items.sort(key=lambda x: x['cost_rate'], reverse=True)
             interval_details[interval_name] = items
 
-        return {
-            'distribution_data': distribution_data,
-            'avg_cost_rate': float(cost_rates.mean()),
-            'median_cost_rate': float(cost_rates.median()),
-            'interval_details': interval_details,
-            'intervals_info': {
-                'method': 'dynamic_quartiles' if max_rate - min_rate >= 0.1 else 'small_range_fixed',
-                'range': f'{min_rate:.1%} - {max_rate:.1%}',
-                'intervals': intervals
-            }
-        }
+        return distribution_data, value_distribution_data, interval_details
 
     def _cost_efficiency_analysis(self, data: pd.DataFrame, analysis_type: str) -> Dict[str, Any]:
         """成本效率分析"""

@@ -9,3 +9,7 @@ exports/
 # IDE and OS generated files
 .DS_Store
 .vscode/
+
+# Other
+._test_frontend.html
+profit_loss_debug.txt
