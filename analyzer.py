@@ -9,6 +9,7 @@ Date: 2025-07-15
 """
 
 import pandas as pd
+import numpy as np
 from typing import Dict, List, Any
 import logging
 from utils import (
@@ -220,10 +221,12 @@ class DataAnalyzer:
         if cost_columns:
             result_data['总成本'] = result_data[cost_columns].fillna(0).sum(axis=1)
             
-            # 计算成本率
+            # 计算成本率（限制在合理范围内）
             if 'amount' in self.field_mapping:
                 amount_col = self.field_mapping['amount']
-                result_data['成本率'] = (result_data['总成本'] / result_data[amount_col]).fillna(0)
+                # 计算成本率，避免除零错误，并限制在合理范围内
+                cost_rate = result_data['总成本'] / result_data[amount_col].replace(0, np.nan)
+                result_data['成本率'] = cost_rate.fillna(0).clip(0, 10)  # 限制成本率在0-10之间（1000%）
         
         return result_data
     
@@ -284,7 +287,9 @@ class DataAnalyzer:
         
         if '总成本' in aggregated.columns and 'amount' in self.field_mapping:
             amount_col = self.field_mapping['amount']
-            aggregated['成本率'] = (aggregated['总成本'] / aggregated[amount_col]).fillna(0)
+            # 计算成本率，避免除零错误，并限制在合理范围内
+            cost_rate = aggregated['总成本'] / aggregated[amount_col].replace(0, np.nan)
+            aggregated['成本率'] = cost_rate.fillna(0).clip(0, 10)  # 限制成本率在0-10之间（1000%）
         
         return aggregated
 
@@ -661,11 +666,18 @@ class DataAnalyzer:
         primary_column = self.field_mapping[config['primary_field']]
         value_column = self.field_mapping[config['value_field']]
 
-        # 创建区间分组
-        data['区间'] = pd.cut(data[primary_column],
-                           bins=config['intervals'],
-                           labels=config['labels'],
-                           right=False)
+        # 创建区间分组，添加错误处理
+        try:
+            data['区间'] = pd.cut(data[primary_column],
+                               bins=config['intervals'],
+                               labels=config['labels'],
+                               right=False)
+        except ValueError as e:
+            print(f"分布区间分析失败: {e}")
+            print(f"字段: {primary_column}")
+            print(f"数据范围: {data[primary_column].min()} - {data[primary_column].max()}")
+            print(f"区间: {config['intervals']}")
+            raise ValueError(f"分布区间分析失败: {e}")
 
         # 双指标统计：数量统计 + 价值统计
         if config['primary_field'] == config['value_field']:
@@ -917,6 +929,9 @@ class DataAnalyzer:
         processed_data = self._apply_unit_conversions(self.raw_data)
         processed_data = self._calculate_derived_metrics(processed_data)
 
+        # 保存处理后的数据到实例属性
+        self.processed_data = processed_data
+
         # 4. 数据聚合
         aggregated_data = self._aggregate_data(processed_data, analysis_type)
 
@@ -945,7 +960,7 @@ class DataAnalyzer:
         """检查是否有成本相关数据"""
         cost_fields = ['cost', 'sea_freight', 'land_freight', 'agency_fee']
         has_cost_fields = any(field in self.field_mapping for field in cost_fields)
-        has_total_cost = '总成本(万元)' in data.columns
+        has_total_cost = '总成本' in data.columns or '总成本(万元)' in data.columns
         has_cost_rate = '成本率' in data.columns
 
         return has_cost_fields or has_total_cost or has_cost_rate
@@ -1025,8 +1040,14 @@ class DataAnalyzer:
             intervals = intervals_data['intervals']
             labels = intervals_data['labels']
 
-            # 创建区间分组
-            cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False, include_lowest=True)
+            # 创建区间分组，添加错误处理
+            try:
+                cost_rate_intervals = pd.cut(cost_rates, bins=intervals, labels=labels, right=False, include_lowest=True)
+            except ValueError as e:
+                print(f"区间划分失败 ({method_name}): {e}")
+                print(f"区间: {intervals}")
+                print(f"成本率范围: {cost_rates.min()} - {cost_rates.max()}")
+                continue  # 跳过这个划分方法
 
             # 统计各区间的多维度数据
             distribution_data, value_distribution_data, interval_details = self._calculate_interval_statistics(
@@ -1054,7 +1075,20 @@ class DataAnalyzer:
             default_labels = ['<50%', '≥50%']
 
             try:
-                cost_rate_intervals = pd.cut(cost_rates, bins=default_intervals, labels=default_labels, right=False, include_lowest=True)
+                # 调整默认区间以适应实际数据范围
+                min_rate = cost_rates.min()
+                max_rate = cost_rates.max()
+
+                if min_rate >= 0.5:
+                    # 如果所有数据都大于50%，调整区间
+                    mid_point = (min_rate + max_rate) / 2
+                    adjusted_intervals = [max(0, min_rate - 0.001), mid_point, min(1.0, max_rate + 0.001)]
+                    adjusted_labels = ['低成本率', '高成本率']
+                else:
+                    adjusted_intervals = default_intervals
+                    adjusted_labels = default_labels
+
+                cost_rate_intervals = pd.cut(cost_rates, bins=adjusted_intervals, labels=adjusted_labels, right=False, include_lowest=True)
                 distribution_data, value_distribution_data, interval_details = self._calculate_interval_statistics(
                     data, cost_rate_intervals, value_fields, 'default'
                 )
@@ -1151,55 +1185,149 @@ class DataAnalyzer:
         intervals_config = {}
 
         # 1. 等频划分（四分位数）- 推荐方法
-        if max_rate - min_rate >= 0.1:  # 数据范围足够大
-            q25 = cost_rates.quantile(0.25)
-            q50 = cost_rates.quantile(0.50)
-            q75 = cost_rates.quantile(0.75)
-            intervals = [0, q25, q50, q75, 1.0]
-            intervals = sorted(list(set(intervals)))
+        if max_rate - min_rate >= 0.01:  # 降低阈值，数据范围足够大
+            try:
+                q25 = cost_rates.quantile(0.25)
+                q50 = cost_rates.quantile(0.50)
+                q75 = cost_rates.quantile(0.75)
 
-            if len(intervals) >= 3:  # 确保有足够的区间
-                labels = self._generate_interval_labels(intervals)
-                intervals_config['等频划分（推荐）'] = {
-                    'intervals': intervals,
-                    'labels': labels,
-                    'method_type': 'quartile',
-                    'description': '基于四分位数划分，确保每个区间包含大致相同数量的项目'
-                }
+                # 构建初始区间，确保包含数据范围
+                intervals = [max(0, min_rate - 0.001), q25, q50, q75, min(1.0, max_rate + 0.001)]
+
+                # 去重并排序，确保严格递增
+                intervals = sorted(list(set(intervals)))
+
+                # 验证区间是否严格递增且有足够的区间数
+                if len(intervals) >= 3 and self._validate_intervals(intervals):
+                    labels = self._generate_interval_labels(intervals)
+                    intervals_config['等频划分（推荐）'] = {
+                        'intervals': intervals,
+                        'labels': labels,
+                        'method_type': 'quartile',
+                        'description': '基于四分位数划分，确保每个区间包含大致相同数量的项目'
+                    }
+            except Exception as e:
+                print(f"等频划分失败: {e}")
 
         # 2. 等宽划分
-        interval_width = (max_rate - min_rate) / 5  # 分为5个等宽区间
-        intervals = [min_rate + i * interval_width for i in range(6)]
-        intervals[0] = 0  # 起始点设为0
-        intervals[-1] = 1.0  # 结束点设为1
-        labels = self._generate_interval_labels(intervals)
+        try:
+            if max_rate - min_rate > 0:  # 确保有数据范围
+                interval_width = (max_rate - min_rate) / 5  # 分为5个等宽区间
+                intervals = [min_rate + i * interval_width for i in range(6)]
 
-        intervals_config['等宽划分'] = {
-            'intervals': intervals,
-            'labels': labels,
-            'method_type': 'equal_width',
-            'description': '将成本率范围均匀分为5个等宽区间'
-        }
+                # 调整边界，确保覆盖所有数据
+                intervals[0] = max(0, min_rate - 0.001)  # 起始点略小于最小值
+                intervals[-1] = min(1.0, max_rate + 0.001)  # 结束点略大于最大值
 
-        # 3. 标准区间（原有的固定区间）
-        standard_intervals = [0, 0.3, 0.5, 0.7, 0.8, 1.0]
-        standard_labels = ['<30%', '30-50%', '50-70%', '70-80%', '>80%']
+                # 验证区间
+                if self._validate_intervals(intervals):
+                    labels = self._generate_interval_labels(intervals)
+                    intervals_config['等宽划分'] = {
+                        'intervals': intervals,
+                        'labels': labels,
+                        'method_type': 'equal_width',
+                        'description': '将成本率范围均匀分为5个等宽区间'
+                    }
+        except Exception as e:
+            print(f"等宽划分失败: {e}")
 
-        intervals_config['标准区间'] = {
-            'intervals': standard_intervals,
-            'labels': standard_labels,
-            'method_type': 'standard',
-            'description': '使用标准的成本率区间划分'
-        }
+        # 3. 标准区间（原有的固定区间）- 只有在数据范围合适时使用
+        try:
+            # 检查标准区间是否适合当前数据
+            if min_rate >= 0 and max_rate <= 1.0:
+                standard_intervals = [0, 0.3, 0.5, 0.7, 0.8, 1.0]
+                standard_labels = ['<30%', '30-50%', '50-70%', '70-80%', '>80%']
+                intervals_config['标准区间'] = {
+                    'intervals': standard_intervals,
+                    'labels': standard_labels,
+                    'method_type': 'standard',
+                    'description': '使用标准的成本率区间划分'
+                }
+            elif max_rate > 1.0:
+                # 对于成本率超过100%的情况，使用扩展区间
+                if max_rate <= 2.0:
+                    extended_intervals = [0, 0.5, 1.0, max(2.1, max_rate + 0.1)]
+                    extended_labels = ['<50%', '50-100%', f'>100%']
+                else:
+                    extended_intervals = [0, 0.5, 1.0, 2.0, max(10.0, max_rate + 0.1)]
+                    extended_labels = ['<50%', '50-100%', '100-200%', f'>200%']
 
-        # 如果等频划分失败，确保至少有等宽划分
-        if '等频划分（推荐）' not in intervals_config:
-            # 将等宽划分设为推荐
-            intervals_config = {'等宽划分（推荐）': intervals_config['等宽划分']} | intervals_config
-            intervals_config['等宽划分（推荐）']['description'] = '数据分布较集中时的推荐划分方法'
-            del intervals_config['等宽划分']
+                intervals_config['扩展区间'] = {
+                    'intervals': extended_intervals,
+                    'labels': extended_labels,
+                    'method_type': 'extended',
+                    'description': '适用于高成本率数据的扩展区间划分'
+                }
+        except Exception as e:
+            print(f"标准/扩展区间划分失败: {e}")
+
+        # 如果所有方法都失败，创建一个简单的二分法
+        if not intervals_config:
+            try:
+                mid_point = (min_rate + max_rate) / 2
+                # 确保区间边界合理
+                start_point = max(0, min_rate - 0.001)
+                end_point = max_rate + 0.001
+
+                simple_intervals = [start_point, mid_point, end_point]
+                simple_labels = ['低成本率', '高成本率']
+
+                intervals_config['简单划分'] = {
+                    'intervals': simple_intervals,
+                    'labels': simple_labels,
+                    'method_type': 'simple',
+                    'description': '简单的二分法划分'
+                }
+            except Exception as e:
+                print(f"简单划分也失败: {e}")
+                # 最后的保险措施 - 使用数据实际范围
+                try:
+                    safe_max = max(1.0, max_rate + 0.1)
+                    intervals_config['默认划分'] = {
+                        'intervals': [0, safe_max/2, safe_max],
+                        'labels': ['低成本率', '高成本率'],
+                        'method_type': 'default',
+                        'description': '默认的二分法划分'
+                    }
+                except Exception:
+                    # 绝对最后的保险措施
+                    intervals_config['默认划分'] = {
+                        'intervals': [0, 0.5, 1.0],
+                        'labels': ['<50%', '≥50%'],
+                        'method_type': 'default',
+                        'description': '默认的二分法划分'
+                    }
+
+        # 如果等频划分失败，将第一个可用方法设为推荐
+        if '等频划分（推荐）' not in intervals_config and intervals_config:
+            first_method_key = list(intervals_config.keys())[0]
+            first_method = intervals_config[first_method_key]
+            intervals_config = {f'{first_method_key}（推荐）': first_method} | intervals_config
+            intervals_config[f'{first_method_key}（推荐）']['description'] = '数据分布情况下的推荐划分方法'
+            del intervals_config[first_method_key]
 
         return intervals_config
+
+    def _validate_intervals(self, intervals):
+        """验证区间是否严格递增且适合pandas.cut使用"""
+        try:
+            # 检查是否严格递增
+            for i in range(1, len(intervals)):
+                if intervals[i] <= intervals[i-1]:
+                    return False
+
+            # 检查是否有足够的区间（至少2个区间需要3个边界点）
+            if len(intervals) < 3:
+                return False
+
+            # 检查数值是否有效（不是NaN或无穷大）
+            for interval in intervals:
+                if pd.isna(interval) or not np.isfinite(interval):
+                    return False
+
+            return True
+        except Exception:
+            return False
 
     def _generate_interval_labels(self, intervals):
         """生成区间标签"""
