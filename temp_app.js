@@ -13,19 +13,9 @@ let layoutAnalysisEnabled = false;
 let layoutDebugMode = false;
 
 // DOM元素
-const fileInput = document.getElementById('fileInput');
-const uploadArea = document.getElementById('uploadArea');
-const uploadProgress = document.getElementById('uploadProgress');
-const progressFill = document.getElementById('progressFill');
-const progressText = document.getElementById('progressText');
-const sheetSection = document.getElementById('sheetSection');
-const sheetList = document.getElementById('sheetList');
-const fieldSection = document.getElementById('fieldSection');
-const unitSection = document.getElementById('unitSection');
-const analysisSection = document.getElementById('analysisSection');
-const loadingOverlay = document.getElementById('loadingOverlay');
-const loadingText = document.getElementById('loadingText');
-const messageContainer = document.getElementById('messageContainer');
+let fileInput, uploadArea, uploadProgress, progressFill, progressText,
+    sheetSection, sheetList, fieldSection, unitSection, analysisSection,
+    loadingOverlay, loadingText, messageContainer;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
@@ -34,6 +24,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 初始化事件监听器
 function initializeEventListeners() {
+    // 获取DOM元素
+    fileInput = document.getElementById('fileInput');
+    uploadArea = document.getElementById('uploadArea');
+    uploadProgress = document.getElementById('uploadProgress');
+    progressFill = document.getElementById('progressFill');
+    progressText = document.getElementById('progressText');
+    sheetSection = document.getElementById('sheetSection');
+    sheetList = document.getElementById('sheetList');
+    fieldSection = document.getElementById('fieldSection');
+    unitSection = document.getElementById('unitSection');
+    analysisSection = document.getElementById('analysisSection');
+    loadingOverlay = document.getElementById('loadingOverlay');
+    loadingText = document.getElementById('loadingText');
+    messageContainer = document.getElementById('messageContainer');
+
     // 文件上传
     fileInput.addEventListener('change', handleFileSelect);
     
@@ -58,6 +63,9 @@ function initializeEventListeners() {
     
     // 布局分析工具初始化
     initializeLayoutAnalysisTools();
+
+    // 列设置功能初始化
+    initializeColumnSettings();
 }
 
 // 文件选择处理
@@ -730,150 +738,86 @@ function getYFieldName() {
 function getGroupFieldName() {
     // 如果没有分析结果，返回null
     if (!analysisResult || !analysisResult.field_detection) {
-        console.warn('getGroupFieldName: 没有分析结果或字段检测信息');
         return null;
     }
-
+    
     // 获取原始检测的字段名
     const fieldMap = {
         'product': analysisResult.field_detection.detected_fields.product,
         'customer': analysisResult.field_detection.detected_fields.customer,
         'region': analysisResult.field_detection.detected_fields.region
     };
-
+    
     const originalFieldName = fieldMap[currentAnalysisType];
-    console.log('getGroupFieldName: 原始字段名', originalFieldName, '分析类型', currentAnalysisType);
-
-    // 如果没有找到原始字段名，尝试从聚合数据中推断
+    
+    // 如果没有找到原始字段名，返回null
     if (!originalFieldName) {
-        console.warn('getGroupFieldName: 没有找到原始字段名，尝试从聚合数据推断');
-        if (analysisResult.aggregated_data && analysisResult.aggregated_data.length > 0) {
-            const sampleData = analysisResult.aggregated_data[0];
-            const possibleFields = Object.keys(sampleData);
-            console.log('getGroupFieldName: 可用字段', possibleFields);
-
-            // 根据分析类型查找包含关键词的字段
-            const keywords = {
-                'product': ['产品', 'product', 'sku', '物料', '商品', '品名'],
-                'customer': ['客户', 'customer', 'client', '买家', '公司'],
-                'region': ['地区', 'region', '区域', '省份', 'area', '省', '市']
-            };
-
-            const typeKeywords = keywords[currentAnalysisType] || [];
-            for (const keyword of typeKeywords) {
-                const matchedField = possibleFields.find(field =>
-                    field.toLowerCase().includes(keyword.toLowerCase()) &&
-                    !field.includes('数量') &&
-                    !field.includes('金额') &&
-                    !field.includes('毛利') &&
-                    !field.includes('成本') &&
-                    !field.includes('占比') &&
-                    !field.includes('率') &&
-                    !field.includes('统计') &&
-                    !field.includes('象限')
-                );
-                if (matchedField) {
-                    console.log('getGroupFieldName: 通过关键词匹配找到字段', matchedField);
-                    return matchedField;
-                }
-            }
-
-            // 尝试找第一个看起来像名称的字段
-            const nameField = possibleFields.find(field =>
-                (field.includes('名称') || field.includes('name')) &&
-                !field.includes('象限')
-            );
-            if (nameField) {
-                console.log('getGroupFieldName: 通过名称匹配找到字段', nameField);
-                return nameField;
-            }
-
-            // 如果还是找不到，返回第一个非数值字段
-            const firstNonNumericField = possibleFields.find(field => {
-                const value = sampleData[field];
-                return typeof value === 'string' && !field.includes('象限');
-            });
-            if (firstNonNumericField) {
-                console.log('getGroupFieldName: 使用第一个非数值字段', firstNonNumericField);
-                return firstNonNumericField;
-            }
-        }
         return null;
     }
-
+    
     // 检查数据是否已经被聚合，如果是，可能需要调整字段名
     // 首先尝试使用原始字段名
     if (analysisResult.aggregated_data && analysisResult.aggregated_data.length > 0) {
         const sampleData = analysisResult.aggregated_data[0];
-
+        
         // 如果原始字段名存在于聚合数据中，直接返回
         if (sampleData.hasOwnProperty(originalFieldName)) {
-            console.log('getGroupFieldName: 使用原始字段名', originalFieldName);
             return originalFieldName;
         }
-
+        
         // 否则，尝试查找可能的替代字段名
+        // 聚合后的数据可能会使用不同的字段名，比如索引名或者带有前缀/后缀的名称
         const possibleFields = Object.keys(sampleData);
-        console.log('getGroupFieldName: 原始字段名不存在，可用字段', possibleFields);
-
+        
         // 尝试精确匹配（忽略大小写）
-        const exactMatch = possibleFields.find(field =>
+        const exactMatch = possibleFields.find(field => 
             field.toLowerCase() === originalFieldName.toLowerCase()
         );
         if (exactMatch) {
-            console.log('getGroupFieldName: 精确匹配找到字段', exactMatch);
             return exactMatch;
         }
-
+        
         // 尝试部分匹配
+        // 根据分析类型查找包含关键词的字段
         const keywords = {
-            'product': ['产品', 'product', 'sku', '物料', '商品', '品名'],
-            'customer': ['客户', 'customer', 'client', '买家', '公司'],
-            'region': ['地区', 'region', '区域', '省份', 'area', '省', '市']
+            'product': ['产品', 'product', 'sku', '物料', '商品'],
+            'customer': ['客户', 'customer', 'client', '买家'],
+            'region': ['地区', 'region', '区域', '省份', 'area']
         };
-
+        
         const typeKeywords = keywords[currentAnalysisType] || [];
         for (const keyword of typeKeywords) {
-            const matchedField = possibleFields.find(field =>
+            const matchedField = possibleFields.find(field => 
                 field.toLowerCase().includes(keyword.toLowerCase()) &&
-                !field.includes('数量') &&
-                !field.includes('金额') &&
+                !field.includes('数量') && 
+                !field.includes('金额') && 
                 !field.includes('毛利') &&
                 !field.includes('成本') &&
                 !field.includes('占比') &&
                 !field.includes('率') &&
-                !field.includes('统计') &&
-                !field.includes('象限')
+                !field.includes('统计')
             );
             if (matchedField) {
-                console.log('getGroupFieldName: 关键词匹配找到字段', matchedField);
                 return matchedField;
             }
         }
-
+        
+        // 如果还是找不到，检查是否有索引字段（可能被设置为索引）
+        if (possibleFields.includes('index')) {
+            return 'index';
+        }
+        
         // 最后尝试找第一个看起来像名称的字段
-        const nameField = possibleFields.find(field =>
+        const nameField = possibleFields.find(field => 
             (field.includes('名称') || field.includes('name')) &&
             !field.includes('象限')
         );
         if (nameField) {
-            console.log('getGroupFieldName: 名称匹配找到字段', nameField);
             return nameField;
         }
-
-        // 如果还是找不到，返回第一个非数值字段
-        const firstNonNumericField = possibleFields.find(field => {
-            const value = sampleData[field];
-            return typeof value === 'string' && !field.includes('象限');
-        });
-        if (firstNonNumericField) {
-            console.log('getGroupFieldName: 使用第一个非数值字段', firstNonNumericField);
-            return firstNonNumericField;
-        }
     }
-
+    
     // 默认返回原始字段名
-    console.log('getGroupFieldName: 使用默认原始字段名', originalFieldName);
     return originalFieldName;
 }
 
@@ -884,229 +828,6 @@ function getGroupFieldLabel() {
         'region': '地区名称'
     };
     return labelMap[currentAnalysisType] || '名称';
-}
-
-// 初始化列设置功能
-function initializeColumnSettings() {
-    const columnSettingsBtn = document.getElementById('columnSettingsBtn');
-    const columnSettingsMenu = document.getElementById('columnSettingsMenu');
-    const selectAllBtn = document.getElementById('selectAllColumns');
-    const resetDefaultBtn = document.getElementById('resetDefaultColumns');
-    const applyBtn = document.getElementById('applyColumnSettings');
-    const cancelBtn = document.getElementById('cancelColumnSettings');
-
-    if (!columnSettingsBtn || !columnSettingsMenu) {
-        console.warn('列设置UI元素未找到');
-        return;
-    }
-
-    // 生成列选择菜单
-    generateColumnSettingsMenu();
-
-    // 绑定事件
-    columnSettingsBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        const isVisible = columnSettingsMenu.style.display === 'block';
-        columnSettingsMenu.style.display = isVisible ? 'none' : 'block';
-    });
-
-    // 点击外部关闭菜单
-    document.addEventListener('click', function(e) {
-        if (!columnSettingsMenu.contains(e.target) && e.target !== columnSettingsBtn) {
-            columnSettingsMenu.style.display = 'none';
-        }
-    });
-
-    // 全选按钮
-    if (selectAllBtn) {
-        selectAllBtn.addEventListener('click', function() {
-            const checkboxes = columnSettingsMenu.querySelectorAll('input[type="checkbox"]:not([disabled])');
-            checkboxes.forEach(checkbox => checkbox.checked = true);
-        });
-    }
-
-    // 重置默认按钮
-    if (resetDefaultBtn) {
-        resetDefaultBtn.addEventListener('click', function() {
-            const allFields = getAllAvailableFieldConfig();
-            const checkboxes = columnSettingsMenu.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                const fieldKey = checkbox.dataset.fieldKey;
-                const field = allFields.find(f => f.key === fieldKey);
-                checkbox.checked = field ? field.defaultVisible : false;
-            });
-        });
-    }
-
-    // 应用按钮
-    if (applyBtn) {
-        applyBtn.addEventListener('click', function() {
-            applyColumnSettings();
-            columnSettingsMenu.style.display = 'none';
-        });
-    }
-
-    // 取消按钮
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', function() {
-            columnSettingsMenu.style.display = 'none';
-        });
-    }
-}
-
-// 生成列设置菜单
-function generateColumnSettingsMenu() {
-    const columnSettingsMenu = document.getElementById('columnSettingsMenu');
-    const categoriesContainer = columnSettingsMenu.querySelector('.column-categories');
-
-    if (!categoriesContainer) return;
-
-    const allFields = getAllAvailableFieldConfig();
-    const tableData = analysisResult.aggregated_data;
-
-    if (!tableData || tableData.length === 0) return;
-
-    // 过滤出当前分析类型适用且数据中存在的字段
-    const availableFields = allFields.filter(field => {
-        if (field.analysisTypes && !field.analysisTypes.includes(currentAnalysisType)) {
-            return false;
-        }
-        return tableData[0].hasOwnProperty(field.key);
-    });
-
-    // 按类别分组
-    const categories = {};
-    availableFields.forEach(field => {
-        const category = field.category || '其他';
-        if (!categories[category]) {
-            categories[category] = [];
-        }
-        categories[category].push(field);
-    });
-
-    // 生成HTML
-    let html = '';
-    Object.keys(categories).forEach(categoryName => {
-        html += `<div class="column-category">
-            <div class="category-title">${categoryName}</div>`;
-
-        categories[categoryName].forEach(field => {
-            const isChecked = userColumnSettings ?
-                userColumnSettings.includes(field.key) :
-                field.defaultVisible;
-            const isRequired = field.required;
-            const disabledAttr = isRequired ? 'disabled' : '';
-            const requiredClass = isRequired ? 'required' : '';
-
-            html += `<div class="column-item ${requiredClass}">
-                <label>
-                    <input type="checkbox"
-                           data-field-key="${field.key}"
-                           ${isChecked ? 'checked' : ''}
-                           ${disabledAttr}>
-                    ${field.label}
-                </label>
-            </div>`;
-        });
-
-        html += '</div>';
-    });
-
-    categoriesContainer.innerHTML = html;
-}
-
-// 应用列设置
-function applyColumnSettings() {
-    const checkboxes = document.querySelectorAll('#columnSettingsMenu input[type="checkbox"]:checked');
-    userColumnSettings = Array.from(checkboxes).map(cb => cb.dataset.fieldKey);
-
-    // 重新显示表格
-    displayDataTable();
-}
-
-// 切换行详情显示
-function toggleRowDetails(rowId, rowIndex) {
-    const detailsRowId = `details-${rowId}`;
-    const detailsRow = document.getElementById(detailsRowId);
-    const expandBtn = document.querySelector(`#${rowId} .expand-btn`);
-    const icon = expandBtn.querySelector('i');
-
-    if (!detailsRow) return;
-
-    const isVisible = detailsRow.style.display !== 'none';
-
-    if (isVisible) {
-        // 隐藏详情
-        detailsRow.style.display = 'none';
-        icon.className = 'fas fa-chevron-right';
-        expandBtn.classList.remove('expanded');
-    } else {
-        // 显示详情
-        generateRowDetails(rowIndex);
-        detailsRow.style.display = 'table-row';
-        icon.className = 'fas fa-chevron-down';
-        expandBtn.classList.add('expanded');
-    }
-}
-
-// 生成行详情内容
-function generateRowDetails(rowIndex) {
-    const tableData = analysisResult.aggregated_data;
-    const row = tableData[rowIndex];
-    const contentContainer = document.getElementById(`details-content-${rowIndex}`);
-
-    if (!row || !contentContainer) return;
-
-    const allFields = getAllAvailableFieldConfig();
-
-    // 过滤出当前分析类型适用且数据中存在的字段
-    const availableFields = allFields.filter(field => {
-        if (field.analysisTypes && !field.analysisTypes.includes(currentAnalysisType)) {
-            return false;
-        }
-        return row.hasOwnProperty(field.key);
-    });
-
-    // 按类别分组
-    const categories = {};
-    availableFields.forEach(field => {
-        const category = field.category || '其他';
-        if (!categories[category]) {
-            categories[category] = [];
-        }
-        categories[category].push(field);
-    });
-
-    // 生成详情HTML
-    let html = '<div class="details-grid">';
-
-    Object.keys(categories).forEach(categoryName => {
-        html += `<div class="detail-category">
-            <h4>${categoryName}</h4>`;
-
-        categories[categoryName].forEach(field => {
-            const value = row[field.key];
-            let displayValue = formatTableValue(value, field.format);
-            let valueClass = '';
-
-            // 为利润字段添加颜色
-            if (field.format === 'profit' && typeof value === 'number') {
-                valueClass = value > 0 ? 'profit-positive' : value < 0 ? 'profit-negative' : '';
-            }
-
-            html += `<div class="detail-item">
-                <span class="detail-label">${field.label}</span>
-                <span class="detail-value ${valueClass}">${displayValue || '-'}</span>
-            </div>`;
-        });
-
-        html += '</div>';
-    });
-
-    html += '</div>';
-    html += '<div class="details-footer">点击展开按钮可收起详情</div>';
-
-    contentContainer.innerHTML = html;
 }
 
 // 根据分析类型获取第二个统计组
@@ -2708,9 +2429,6 @@ function displayDataTable() {
         return;
     }
 
-    // 初始化列设置功能
-    initializeColumnSettings();
-
     // 定义字段显示顺序和格式化规则
     const fieldConfig = getTableFieldConfig();
 
@@ -2741,219 +2459,192 @@ function displayDataTable() {
     setupTableControls(tableData);
 }
 
-// 用户列设置
+// 用户自定义的列显示设置
 let userColumnSettings = null;
 
-// 获取所有可用字段配置
+// 获取所有可用的表格字段配置
 function getAllAvailableFieldConfig() {
-    const groupFieldName = getGroupFieldName();
-    const groupFieldLabel = getGroupFieldLabel();
-
     const allFields = [
-        // 基础信息
+        // 基础字段
         {
-            key: groupFieldName,
-            label: groupFieldLabel,
-            category: '基础信息',
+            key: getGroupFieldName(),
+            label: getGroupFieldLabel(),
             className: 'col-name',
             headerStyle: 'min-width: 150px; text-align: left;',
-            required: true,
+            category: 'basic',
+            description: '主要分析对象名称',
             defaultVisible: true,
-            analysisTypes: ['product', 'customer', 'region']
+            required: true
         },
         {
             key: '象限名称',
             label: '象限分类',
-            category: '基础信息',
             className: 'col-quadrant',
             headerStyle: 'min-width: 120px; text-align: center;',
-            required: true,
+            category: 'basic',
+            description: '四象限分析结果',
             defaultVisible: true,
-            analysisTypes: ['product', 'customer', 'region']
+            required: true
         },
 
         // 规模指标
         {
             key: '销量(吨)',
             label: '销量(吨)',
-            category: '规模指标',
             className: 'col-number',
             headerStyle: 'min-width: 80px; text-align: right;',
             format: 'number',
-            defaultVisible: true,
-            analysisTypes: ['product']
-        },
-        {
-            key: '采购数量(吨)',
-            label: '采购数量(吨)',
-            category: '规模指标',
-            className: 'col-number',
-            headerStyle: 'min-width: 100px; text-align: right;',
-            format: 'number',
-            defaultVisible: true,
-            analysisTypes: ['customer']
-        },
-        {
-            key: '地区销售数量(吨)',
-            label: '销售数量(吨)',
-            category: '规模指标',
-            className: 'col-number',
-            headerStyle: 'min-width: 100px; text-align: right;',
-            format: 'number',
-            defaultVisible: true,
-            analysisTypes: ['region']
-        },
-        {
-            key: '总金额(万元)',
-            label: '总金额(万元)',
-            category: '规模指标',
-            className: 'col-number',
-            headerStyle: 'min-width: 100px; text-align: right;',
-            format: 'number',
+            category: 'scale',
+            description: '销售数量（吨）',
             defaultVisible: true,
             analysisTypes: ['product']
         },
         {
             key: '采购金额(万元)',
             label: '采购金额(万元)',
-            category: '规模指标',
             className: 'col-number',
             headerStyle: 'min-width: 120px; text-align: right;',
             format: 'number',
+            category: 'scale',
+            description: '客户采购总金额',
             defaultVisible: true,
+            analysisTypes: ['customer']
+        },
+        {
+            key: '采购数量(吨)',
+            label: '采购数量(吨)',
+            className: 'col-number',
+            headerStyle: 'min-width: 100px; text-align: right;',
+            format: 'number',
+            category: 'scale',
+            description: '客户采购总数量',
+            defaultVisible: false,
             analysisTypes: ['customer']
         },
         {
             key: '地区销售金额(万元)',
             label: '销售金额(万元)',
-            category: '规模指标',
             className: 'col-number',
             headerStyle: 'min-width: 120px; text-align: right;',
             format: 'number',
+            category: 'scale',
+            description: '地区销售总金额',
             defaultVisible: true,
             analysisTypes: ['region']
         },
-
-        // New columns added as per optimization requirements
         {
-            key: '数量',
-            label: '数量',
-            category: '规模指标',
-            className: 'col-number',
-            headerStyle: 'min-width: 80px; text-align: right;',
-            format: 'integer',
-            defaultVisible: true,
-            analysisTypes: ['product', 'customer', 'region']
-        },
-        {
-            key: '金额',
-            label: '金额(万元)',
-            category: '规模指标',
+            key: '地区销售数量(吨)',
+            label: '销售数量(吨)',
             className: 'col-number',
             headerStyle: 'min-width: 100px; text-align: right;',
             format: 'number',
+            category: 'scale',
+            description: '地区销售总数量',
+            defaultVisible: false,
+            analysisTypes: ['region']
+        },
+        {
+            key: '总金额(万元)',
+            label: '总金额(万元)',
+            className: 'col-number',
+            headerStyle: 'min-width: 100px; text-align: right;',
+            format: 'number',
+            category: 'scale',
+            description: '销售总金额',
             defaultVisible: true,
-            analysisTypes: ['product', 'customer', 'region']
+            analysisTypes: ['product']
         },
 
         // 效率指标
         {
             key: '吨毛利',
             label: '吨毛利(元)',
-            category: '效率指标',
             className: 'col-currency',
             headerStyle: 'min-width: 100px; text-align: right;',
             format: 'profit',
+            category: 'efficiency',
+            description: '每吨产品的毛利',
             defaultVisible: true,
             analysisTypes: ['product']
         },
         {
             key: '客户毛利率',
             label: '毛利率(%)',
-            category: '效率指标',
             className: 'col-percent',
             headerStyle: 'min-width: 80px; text-align: right;',
             format: 'percent',
-            defaultVisible: true,
+            category: 'efficiency',
+            description: '客户毛利率',
+            defaultVisible: false,
             analysisTypes: ['customer']
         },
 
-        // 利润指标
+        // 绝对利润指标
         {
             key: '总毛利(万元)',
             label: '总毛利(万元)',
-            category: '利润指标',
             className: 'col-currency',
             headerStyle: 'min-width: 100px; text-align: right;',
             format: 'profit',
-            defaultVisible: true,
+            category: 'profit',
+            description: '总毛利贡献',
+            defaultVisible: false,
             analysisTypes: ['product']
         },
         {
             key: '毛利贡献(万元)',
             label: '毛利贡献(万元)',
-            category: '利润指标',
             className: 'col-currency',
             headerStyle: 'min-width: 120px; text-align: right;',
             format: 'profit',
+            category: 'profit',
+            description: '客户毛利贡献',
             defaultVisible: true,
             analysisTypes: ['customer']
         },
         {
             key: '地区毛利贡献(万元)',
             label: '毛利贡献(万元)',
-            category: '利润指标',
             className: 'col-currency',
             headerStyle: 'min-width: 120px; text-align: right;',
             format: 'profit',
+            category: 'profit',
+            description: '地区毛利贡献',
             defaultVisible: true,
             analysisTypes: ['region']
         },
-
-        // New profit column added as per optimization requirements
         {
-            key: '毛利',
-            label: '毛利(万元)',
-            category: '利润指标',
-            className: 'col-currency',
-            headerStyle: 'min-width: 100px; text-align: right;',
-            format: 'profit',
-            defaultVisible: true,
-            analysisTypes: ['product', 'customer', 'region']
+            key: '地区客户数量',
+            label: '客户数量',
+            className: 'col-integer',
+            headerStyle: 'min-width: 80px; text-align: right;',
+            format: 'integer',
+            category: 'count',
+            description: '地区客户数量',
+            defaultVisible: false,
+            analysisTypes: ['region']
         },
 
-        // 成本指标
+        // 成本相关字段
         {
             key: '总成本(万元)',
             label: '总成本(万元)',
-            category: '成本指标',
             className: 'col-number',
             headerStyle: 'min-width: 100px; text-align: right;',
             format: 'number',
-            defaultVisible: false,
-            analysisTypes: ['product', 'customer', 'region']
+            category: 'cost',
+            description: '总成本金额',
+            defaultVisible: false
         },
         {
             key: '成本率',
             label: '成本率(%)',
-            category: '成本指标',
             className: 'col-number',
             headerStyle: 'min-width: 80px; text-align: right;',
             format: 'percent',
-            defaultVisible: false,
-            analysisTypes: ['product', 'customer', 'region']
-        },
-
-        // 数量指标
-        {
-            key: '地区客户数量',
-            label: '客户数量',
-            category: '数量指标',
-            className: 'col-integer',
-            headerStyle: 'min-width: 80px; text-align: right;',
-            format: 'integer',
-            defaultVisible: false,
-            analysisTypes: ['region']
+            category: 'cost',
+            description: '成本占销售额的比例',
+            defaultVisible: false
         }
     ];
 
@@ -2998,12 +2689,12 @@ function displayTableData(data, fieldConfig) {
 
     let bodyHtml = '';
     data.forEach((row, index) => {
-        const rowId = `row-${index}`;
-        bodyHtml += `<tr id="${rowId}">`;
+        const rowId = `row_${index}`;
+        bodyHtml += `<tr class="data-row" data-row-id="${rowId}">`;
 
         // 添加展开按钮列
         bodyHtml += `<td class="col-expand">
-            <button class="expand-btn" onclick="toggleRowDetails('${rowId}', ${index})" title="查看详情">
+            <button class="expand-btn" onclick="toggleRowDetails('${rowId}')" title="查看详情">
                 <i class="fas fa-chevron-right"></i>
             </button>
         </td>`;
@@ -3015,23 +2706,49 @@ function displayTableData(data, fieldConfig) {
                 let cellClass = config.className || '';
                 let cellContent = displayValue || '';
 
-                // Enhanced quadrant visualization - Solution 2
+                // 为象限名称添加标签样式
                 if (config.key === '象限名称') {
-                    cellContent = generateEnhancedQuadrantLabel(value);
+                    const quadrantClass = getQuadrantClass(value);
+                    cellContent = `<span class="quadrant-badge ${quadrantClass}">${displayValue}</span>`;
                 }
 
-                // Enhanced data visualization - Solution 2: Categorized data bars
-                if ((config.format === 'number' || config.format === 'integer') && typeof value === 'number') {
-                    const enhancedCellData = generateEnhancedDataCell(value, displayValue, config, data);
-                    cellContent = enhancedCellData.content;
-                    cellClass += ' ' + enhancedCellData.className;
-                }
+                // 为数值字段添加数据条和颜色
+                if (typeof value === 'number' && (config.format === 'number' || config.format === 'currency' || config.format === 'profit' || config.format === 'percent')) {
+                    // 为利润相关字段添加颜色
+                    if (config.format === 'profit') {
+                        const profitClass = value > 0 ? 'profit-positive' : value < 0 ? 'profit-negative' : 'profit-zero';
+                        cellClass += ` ${profitClass}`;
+                    }
 
-                // Enhanced profit visualization - Solution 2: Bidirectional data bars
-                if (config.format === 'profit' && typeof value === 'number') {
-                    const enhancedProfitData = generateEnhancedProfitCell(value, displayValue, config, data);
-                    cellContent = enhancedProfitData.content;
-                    cellClass += ' ' + enhancedProfitData.className;
+                    // 为所有数值字段添加数据条
+                    if (Math.abs(value) > 0) {
+                        const columnValues = data.map(d => d[config.key] || 0).filter(v => typeof v === 'number');
+                        const maxValue = Math.max(...columnValues.map(v => Math.abs(v)));
+                        const minValue = Math.min(...columnValues);
+
+                        if (maxValue > 0) {
+                            let barWidth, barClass, barDirection;
+
+                            if (config.format === 'profit') {
+                                // 利润字段：双向数据条
+                                barWidth = Math.abs(value) / maxValue * 60; // 最大60%宽度
+                                barClass = value >= 0 ? 'positive' : 'negative';
+                                barDirection = 'bidirectional';
+                            } else {
+                                // 其他数值字段：单向数据条
+                                barWidth = Math.abs(value) / maxValue * 80; // 最大80%宽度
+                                barClass = 'scale';
+                                barDirection = 'unidirectional';
+                            }
+
+                            cellContent = `
+                                <div class="data-bar-container ${barDirection}">
+                                    <div class="data-bar ${barClass}" style="width: ${barWidth}%"></div>
+                                    <div class="data-value">${displayValue}</div>
+                                </div>
+                            `;
+                        }
+                    }
                 }
 
                 bodyHtml += `<td class="${cellClass}">${cellContent}</td>`;
@@ -3040,11 +2757,10 @@ function displayTableData(data, fieldConfig) {
         bodyHtml += '</tr>';
 
         // 添加详情行（初始隐藏）
-        const detailsRowId = `details-${rowId}`;
-        bodyHtml += `<tr id="${detailsRowId}" class="row-details" style="display: none;">
-            <td colspan="${fieldConfig.length + 1}">
-                <div class="row-details-content" id="details-content-${index}">
-                    <!-- 详情内容将动态生成 -->
+        bodyHtml += `<tr class="detail-row" id="detail_${rowId}" style="display: none;">
+            <td colspan="${fieldConfig.length + 1}" class="detail-cell">
+                <div class="detail-content">
+                    ${generateRowDetails(row, fieldConfig)}
                 </div>
             </td>
         </tr>`;
@@ -4780,159 +4496,45 @@ function showCostEfficiencyItemDetails(dataItem) {
     document.body.appendChild(modal);
 }
 
-// ====== Enhanced Data Visualization Functions - Solution 2 ====== //
+// ==================== 列自定义功能 ====================
 
-/**
- * Generate enhanced data cell with categorized data bars
- * @param {number} value - The numeric value
- * @param {string} displayValue - The formatted display value
- * @param {object} config - Field configuration
- * @param {array} data - All data for max value calculation
- * @returns {object} Enhanced cell data with content and className
- */
-function generateEnhancedDataCell(value, displayValue, config, data) {
-    if (value === null || value === undefined || isNaN(value)) {
-        return {
-            content: displayValue || '-',
-            className: 'data-cell'
-        };
+// 初始化列设置功能
+function initializeColumnSettings() {
+    const columnSettingsBtn = document.getElementById('columnSettingsBtn');
+    const columnSettingsDropdown = document.getElementById('columnSettingsDropdown');
+    const cancelBtn = document.getElementById('cancelColumnSettings');
+    const selectAllBtn = document.getElementById('selectAllColumns');
+    const resetDefaultBtn = document.getElementById('resetDefaultColumns');
+
+    if (!columnSettingsBtn || !columnSettingsDropdown) {
+        return; // 如果元素不存在，直接返回
     }
 
-    // Determine data bar type based on field characteristics
-    const fieldKey = config.key.toLowerCase();
-    let barType = 'scale'; // Default to scale type
-    let barDirection = 'single'; // single or bidirectional
-    
-    // Categorize fields based on their purpose
-    if (fieldKey.includes('数量') || fieldKey.includes('quantity') || fieldKey.includes('amount') || fieldKey.includes('金额')) {
-        barType = 'scale'; // 规模指标 - Scale indicators
-    } else if (fieldKey.includes('率') || fieldKey.includes('rate') || fieldKey.includes('ratio') || fieldKey.includes('efficiency') || fieldKey.includes('吨毛利')) {
-        barType = 'efficiency'; // 效率指标 - Efficiency indicators
-    } else if (fieldKey.includes('利润') || fieldKey.includes('profit') || fieldKey.includes('毛利')) {
-        barType = 'profit';
-        barDirection = 'bidirectional';
-    }
+    // 点击列设置按钮
+    columnSettingsBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        showColumnSettings();
+    });
 
-    // Calculate data bar properties
-    const maxValue = Math.max(...data.map(d => Math.abs(d[config.key] || 0)));
-    if (maxValue === 0) {
-        return {
-            content: `<div class="data-cell"><div class="data-cell-content">${displayValue}</div></div>`,
-            className: 'data-cell'
-        };
-    }
+    // 应用设置
+    applyBtn.addEventListener('click', function() {
+        applyColumnSettings();
+    });
 
-    let barWidth, barHtml;
-    const absValue = Math.abs(value);
-    const percentage = (absValue / maxValue) * 100;
+    // 取消设置
+    cancelBtn.addEventListener('click', function() {
+        hideColumnSettings();
+    });
 
-    if (barDirection === 'bidirectional' && (barType === 'profit')) {
-        // Bidirectional bars for profit/loss indicators
-        const barWidth = Math.min(percentage * 0.7, 70); // Max 70% width
-        const isPositive = value >= 0;
-        const barClass = isPositive ? 'data-bar-profit-positive' : 'data-bar-profit-negative';
-        
-        barHtml = `
-            <div class="data-cell">
-                <div class="data-bar-center-line"></div>
-                <div class="data-bar ${barClass}" style="width: ${barWidth}%"></div>
-                <div class="data-cell-content">${displayValue}</div>
-            </div>
-        `;
-    } else {
-        // Single direction bars for scale and efficiency indicators
-        const barWidth = Math.min(percentage * 0.8, 80); // Max 80% width
-        const barClass = barType === 'scale' ? 'data-bar-scale' : 'data-bar-efficiency';
-        
-        barHtml = `
-            <div class="data-cell">
-                <div class="data-bar ${barClass}" style="width: ${barWidth}%"></div>
-                <div class="data-cell-content">${displayValue}</div>
-            </div>
-        `;
-    }
+    // 全选
+    selectAllBtn.addEventListener('click', function() {
+        selectAllColumns();
+    });
 
-    return {
-        content: barHtml,
-        className: `data-cell col-number-enhanced data-cell-${barType}`
-    };
-}
+    // 重置默认
+    resetDefaultBtn.addEventListener('click', function() {
+        resetDefaultColumns();
+    });
 
-/**
- * Generate enhanced profit cell with bidirectional visualization
- * @param {number} value - The profit value
- * @param {string} displayValue - The formatted display value
- * @param {object} config - Field configuration
- * @param {array} data - All data for max value calculation
- * @returns {object} Enhanced profit cell data
- */
-function generateEnhancedProfitCell(value, displayValue, config, data) {
-    if (value === null || value === undefined || isNaN(value)) {
-        return {
-            content: displayValue || '-',
-            className: 'data-cell'
-        };
-    }
-
-    const isPositive = value >= 0;
-    const profitClass = isPositive ? 'profit-positive' : 'profit-negative';
-    
-    // Calculate max absolute value for scaling
-    const maxAbsValue = Math.max(...data.map(d => Math.abs(d[config.key] || 0)));
-    
-    if (maxAbsValue === 0 || Math.abs(value) === 0) {
-        return {
-            content: `
-                <div class="data-cell">
-                    <div class="data-cell-content number-main">${displayValue}</div>
-                </div>
-            `,
-            className: `data-cell col-number-enhanced ${profitClass}`
-        };
-    }
-
-    // Calculate bar width (max 60% for better visual balance)
-    const barWidth = Math.min((Math.abs(value) / maxAbsValue) * 60, 60);
-    const barClass = isPositive ? 'data-bar-profit-positive' : 'data-bar-profit-negative';
-
-    const cellContent = `
-        <div class="data-cell">
-            <div class="data-bar-center-line"></div>
-            <div class="data-bar ${barClass}" style="width: ${barWidth}%"></div>
-            <div class="data-cell-content">
-                <span class="number-main">${displayValue}</span>
-            </div>
-        </div>
-    `;
-
-    return {
-        content: cellContent,
-        className: `data-cell col-number-enhanced data-cell-profit ${profitClass}`
-    };
-}
-
-/**
- * Enhanced quadrant label with improved styling
- * @param {string} quadrantName - The quadrant name
- * @returns {string} HTML for enhanced quadrant label
- */
-function generateEnhancedQuadrantLabel(quadrantName) {
-    const quadrantMap = {
-        '明星产品': 'quadrant-star',
-        '金牛产品': 'quadrant-cash-cow', 
-        '潜力产品': 'quadrant-question',
-        '瘦狗产品': 'quadrant-dog',
-        '核心客户': 'quadrant-star',
-        '增利客户': 'quadrant-cash-cow',
-        '成长客户': 'quadrant-question', 
-        '机会客户': 'quadrant-dog',
-        '核心市场': 'quadrant-star',
-        '规模市场': 'quadrant-cash-cow',
-        '机会市场': 'quadrant-question',
-        '边缘市场': 'quadrant-dog'
-    };
-
-    const className = quadrantMap[quadrantName] || 'quadrant-default';
-    return `<span class="quadrant-label ${className}">${quadrantName}</span>`;
-}
-
+    // 点击外部关闭
+    document.addEventListener('click', function(e) {

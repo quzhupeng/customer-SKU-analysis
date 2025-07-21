@@ -227,13 +227,37 @@
 
             <!-- 明细数据表格 -->
             <div class="data-table-container">
-                <h3>明细数据</h3>
+                <div class="table-header">
+                    <h3>明细数据</h3>
+                    <button id="columnSettingsBtn" class="column-settings-btn" title="列设置">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
                 <div class="table-controls">
                     <input type="text" id="searchInput" placeholder="搜索产品名称、客户名称或地区..." class="search-input">
                     <select id="filterSelect" class="filter-select">
                         <option value="">全部象限</option>
                     </select>
                 </div>
+
+                <!-- 列设置菜单 -->
+                <div id="columnSettingsMenu" class="column-settings-menu" style="display: none;">
+                    <div class="column-settings-header">
+                        <h4>选择显示列</h4>
+                        <div class="column-settings-actions">
+                            <button id="selectAllColumns" class="btn-small">全选</button>
+                            <button id="resetDefaultColumns" class="btn-small">重置默认</button>
+                        </div>
+                    </div>
+                    <div class="column-categories">
+                        <!-- 动态生成列选择项 -->
+                    </div>
+                    <div class="column-settings-footer">
+                        <button id="applyColumnSettings" class="btn-primary">应用</button>
+                        <button id="cancelColumnSettings" class="btn-secondary">取消</button>
+                    </div>
+                </div>
+
                 <div class="table-wrapper">
                     <table id="dataTable" class="data-table">
                         <thead id="tableHeader">

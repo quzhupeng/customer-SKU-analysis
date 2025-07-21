@@ -1777,6 +1777,7 @@ body {
     background: #f8f9fa;
     border-radius: 10px;
     padding: 20px;
+    position: relative; /* 为列设置菜单提供定位上下文 */
 }
 
 .table-controls {
@@ -2492,4 +2493,658 @@ body {
     border-radius: 8px;
     color: #856404;
     font-size: 14px;
+}
+
+/* 表格头部样式 */
+.table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.table-header h3 {
+    margin: 0;
+    color: #333;
+    font-size: 1.5rem;
+}
+
+/* 列设置按钮 */
+.column-settings-btn {
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.column-settings-btn:hover {
+    background: #5a67d8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* 列设置菜单 */
+.column-settings-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    min-width: 320px;
+    max-width: 400px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.column-settings-header {
+    padding: 20px 20px 15px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 12px 12px 0 0;
+}
+
+.column-settings-header h4 {
+    margin: 0 0 10px 0;
+    color: #2d3748;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.column-settings-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-small {
+    background: #e2e8f0;
+    color: #4a5568;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-small:hover {
+    background: #cbd5e0;
+    color: #2d3748;
+}
+
+/* 列分类容器 */
+.column-categories {
+    padding: 15px 20px;
+}
+
+.column-category {
+    margin-bottom: 20px;
+}
+
+.column-category:last-child {
+    margin-bottom: 0;
+}
+
+.category-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.column-item {
+    margin-bottom: 8px;
+}
+
+.column-item label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+    font-size: 14px;
+    color: #4a5568;
+}
+
+.column-item label:hover {
+    background: #f7fafc;
+}
+
+.column-item input[type="checkbox"] {
+    margin-right: 10px;
+    width: 16px;
+    height: 16px;
+    accent-color: #667eea;
+}
+
+.column-item.required label {
+    color: #2d3748;
+    font-weight: 500;
+}
+
+.column-item.required input[type="checkbox"] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 列设置底部 */
+.column-settings-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 0 0 12px 12px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+    background: #5a67d8;
+}
+
+.btn-secondary {
+    background: #e2e8f0;
+    color: #4a5568;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background: #cbd5e0;
+    color: #2d3748;
+}
+
+/* 数据条样式 */
+.data-bar-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.data-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 2px;
+    opacity: 0.25;
+    transition: opacity 0.2s ease;
+    z-index: 1;
+}
+
+.data-bar.positive {
+    background: linear-gradient(90deg, #48bb78, #38a169);
+}
+
+.data-bar.negative {
+    background: linear-gradient(90deg, #f56565, #e53e3e);
+}
+
+.data-bar.single-direction {
+    background: linear-gradient(90deg, #4299e1, #3182ce);
+}
+
+.data-value {
+    position: relative;
+    z-index: 2;
+    padding: 8px 12px;
+    font-weight: 500;
+}
+
+/* 悬停时增强数据条显示 */
+tr:hover .data-bar {
+    opacity: 0.4;
+}
+
+/* 展开按钮样式 */
+.expand-btn {
+    background: none;
+    border: none;
+    color: #667eea;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.expand-btn:hover {
+    background: #f7fafc;
+    color: #5a67d8;
+}
+
+.expand-btn.expanded {
+    transform: rotate(90deg);
+}
+
+/* 行详情样式 */
+.row-details {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+}
+
+.row-details-content {
+    padding: 20px;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+    to {
+        opacity: 1;
+        max-height: 500px;
+        padding-top: 20px;
+        padding-bottom: 20px;
+    }
+}
+
+.details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.detail-category {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.detail-category h4 {
+    color: #2d3748;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid #f7fafc;
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    color: #4a5568;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.detail-value {
+    color: #2d3748;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: right;
+}
+
+.detail-value.profit-positive {
+    color: #38a169;
+}
+
+.detail-value.profit-negative {
+    color: #e53e3e;
+}
+
+.details-footer {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e2e8f0;
+    text-align: center;
+    color: #718096;
+    font-size: 12px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .column-settings-menu {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 90%;
+        max-width: 350px;
+        max-height: 80vh;
+    }
+
+    .details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .table-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: flex-start;
+    }
+}
+
+/* ====== Enhanced Table Optimization Styles - Solution 1 & 2 ====== */
+
+/* Enhanced Column Settings Animation */
+.column-settings-menu {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.column-settings-menu[style*="display: block"] {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Enhanced Category Header */
+.category-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 8px 0;
+}
+
+.category-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a5568;
+    letter-spacing: 0.025em;
+}
+
+.category-count {
+    font-size: 12px;
+    color: #718096;
+    background: #edf2f7;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+/* Enhanced Column Items */
+.category-columns {
+    margin-bottom: 16px;
+}
+
+.column-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 10px 12px;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+    position: relative;
+}
+
+.column-label:hover {
+    background: #f7fafc;
+    border-color: #cbd5e0;
+}
+
+.checkbox-custom {
+    position: relative;
+    width: 18px;
+    height: 18px;
+    margin-right: 12px;
+    border: 2px solid #d1d5db;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.column-checkbox:checked + .checkbox-custom {
+    background: #667eea;
+    border-color: #667eea;
+}
+
+.column-checkbox:checked + .checkbox-custom::after {
+    content: '✓';
+    position: absolute;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.column-checkbox {
+    opacity: 0;
+    position: absolute;
+    pointer-events: none;
+}
+
+.column-name {
+    color: #4a5568;
+    font-size: 14px;
+    font-weight: 500;
+    flex: 1;
+}
+
+/* Enhanced Action Buttons */
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: #4a5568;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.btn-secondary:hover {
+    background: #edf2f7;
+    border-color: #cbd5e0;
+}
+
+/* ====== Data Visualization Enhancement - Solution 2 ====== */
+
+/* In-cell Data Bars */
+.data-cell {
+    position: relative;
+    overflow: hidden;
+}
+
+.data-cell-content {
+    position: relative;
+    z-index: 2;
+}
+
+.data-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 1;
+    opacity: 0.15;
+    transition: opacity 0.2s ease;
+    border-radius: 2px;
+}
+
+.data-cell:hover .data-bar {
+    opacity: 0.25;
+}
+
+/* Scale Data Bars (规模指标) */
+.data-bar-scale {
+    background: linear-gradient(90deg, #48bb78, #38a169);
+}
+
+/* Efficiency Data Bars (效率指标) */
+.data-bar-efficiency {
+    background: linear-gradient(90deg, #4299e1, #3182ce);
+}
+
+/* Profit/Loss Data Bars (损益指标) */
+.data-bar-profit-positive {
+    background: linear-gradient(90deg, #48bb78, #38a169);
+}
+
+.data-bar-profit-negative {
+    background: linear-gradient(90deg, #f56565, #e53e3e);
+    left: auto;
+    right: 50%;
+    transform-origin: right;
+}
+
+.data-bar-center-line {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.1);
+    z-index: 1;
+}
+
+/* Enhanced Number Formatting */
+.col-number-enhanced {
+    position: relative;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-weight: 500;
+    text-align: right;
+    padding: 12px 16px;
+}
+
+.number-main {
+    font-size: 14px;
+    color: #2d3748;
+}
+
+.number-unit {
+    font-size: 11px;
+    color: #718096;
+    margin-left: 2px;
+}
+
+/* Enhanced Quadrant Labels */
+.quadrant-label {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 60px;
+}
+
+.quadrant-star {
+    background: linear-gradient(135deg, #48bb78, #38a169);
+    color: white;
+}
+
+.quadrant-cash-cow {
+    background: linear-gradient(135deg, #4299e1, #3182ce);
+    color: white;
+}
+
+.quadrant-question {
+    background: linear-gradient(135deg, #ed8936, #dd6b20);
+    color: white;
+}
+
+.quadrant-dog {
+    background: linear-gradient(135deg, #a0aec0, #718096);
+    color: white;
+}
+
+/* Performance Enhancement */
+.data-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.data-table tbody tr:hover {
+    background-color: #f7fafc;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Loading State for Columns */
+.column-loading {
+    opacity: 0.6;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+/* Success Messages for Column Updates */
+.column-update-success {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #48bb78;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(72, 187, 120, 0.4);
+    z-index: 9999;
+    font-weight: 600;
+    animation: slideInRight 0.3s ease;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }
