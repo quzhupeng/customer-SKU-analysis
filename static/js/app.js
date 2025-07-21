@@ -3236,31 +3236,45 @@ async function handleExportReport() {
     showLoading('生成报告中...');
 
     try {
-        const response = await fetch('/export', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                file_id: currentFileId
-            })
-        });
+        const chartInstance = echarts.getInstanceByDom(document.getElementById('quadrantChart'));
 
-        if (response.ok) {
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `分析报告_${new Date().toISOString().slice(0, 10)}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
+        if (chartInstance) {
+            // 图表存在，获取图片并使用POST请求
+            const base64Image = chartInstance.getDataURL({
+                type: 'png',
+                pixelRatio: 2,
+                backgroundColor: '#fff'
+            });
 
-            showMessage('报告导出成功', 'success');
+            const response = await fetch('/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    file_id: currentFileId,
+                    chart_image: base64Image
+                })
+            });
+
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `分析报告_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showMessage('报告导出成功', 'success');
+            } else {
+                const result = await response.json();
+                throw new Error(result.error || '导出报告失败');
+            }
         } else {
-            const result = await response.json();
-            throw new Error(result.error);
+            // 图表不存在，回退到原有的GET下载逻辑
+            window.location.href = '/export?file_id=' + currentFileId;
         }
     } catch (error) {
         showMessage('导出失败: ' + error.message, 'error');
