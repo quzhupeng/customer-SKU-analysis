@@ -1025,7 +1025,7 @@ function applyColumnSettings() {
 }
 
 // 切换行详情显示
-function toggleRowDetails(rowId, rowIndex) {
+function toggleRowDetails(rowId, rowData) {
     const detailsRowId = `details-${rowId}`;
     const detailsRow = document.getElementById(detailsRowId);
     const expandBtn = document.querySelector(`#${rowId} .expand-btn`);
@@ -1042,7 +1042,7 @@ function toggleRowDetails(rowId, rowIndex) {
         expandBtn.classList.remove('expanded');
     } else {
         // 显示详情
-        generateRowDetails(rowIndex);
+        generateRowDetails(rowId, rowData);
         detailsRow.style.display = 'table-row';
         icon.className = 'fas fa-chevron-down';
         expandBtn.classList.add('expanded');
@@ -1050,9 +1050,10 @@ function toggleRowDetails(rowId, rowIndex) {
 }
 
 // 生成行详情内容
-function generateRowDetails(rowIndex) {
-    const tableData = analysisResult.aggregated_data;
-    const row = tableData[rowIndex];
+function generateRowDetails(rowId, rowData) {
+    const row = rowData;
+    // Extract the index from rowId (format: "row-{index}")
+    const rowIndex = rowId.split('-')[1];
     const contentContainer = document.getElementById(`details-content-${rowIndex}`);
 
     if (!row || !contentContainer) return;
@@ -3002,8 +3003,10 @@ function displayTableData(data, fieldConfig) {
         bodyHtml += `<tr id="${rowId}">`;
 
         // 添加展开按钮列
+        // Store row data in a data attribute for access by the click handler
+        const rowDataJson = JSON.stringify(row).replace(/"/g, '&quot;');
         bodyHtml += `<td class="col-expand">
-            <button class="expand-btn" onclick="toggleRowDetails('${rowId}', ${index})" title="查看详情">
+            <button class="expand-btn" onclick="toggleRowDetails('${rowId}', JSON.parse(this.getAttribute('data-row')))" data-row="${rowDataJson}" title="查看详情">
                 <i class="fas fa-chevron-right"></i>
             </button>
         </td>`;
